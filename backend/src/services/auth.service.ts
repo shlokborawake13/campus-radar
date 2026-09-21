@@ -34,9 +34,11 @@ export const authService = {
       if (existingUser.status === 'pending_verification') {
         logger.info('Signup for pending verification account, regenerating OTP', { email: normalizedEmail, userId: existingUser.id });
         const otp = await otpService.generateAndSave(normalizedEmail, 'registration');
-        emailService.sendVerificationOTP(normalizedEmail, otp).catch((err: any) => {
-          logger.warn('Asynchronous OTP email dispatch error', { error: err.message, email: normalizedEmail });
-        });
+        const emailSent = await emailService.sendVerificationOTP(normalizedEmail, otp);
+        if (!emailSent) {
+          logger.error('Failed to dispatch re-registration OTP email', { email: normalizedEmail });
+          throw new BadRequestError('Could not send verification email. Please try again in a moment.');
+        }
         return {
           message: 'Account pending verification. A new verification OTP has been sent to your email.',
           userId: existingUser.id,
@@ -53,9 +55,11 @@ export const authService = {
         if (existingByPhone.status === 'pending_verification' && existingByPhone.email === normalizedEmail) {
           logger.info('Signup by existing pending phone number, regenerating OTP', { email: normalizedEmail, userId: existingByPhone.id });
           const otp = await otpService.generateAndSave(normalizedEmail, 'registration');
-          emailService.sendVerificationOTP(normalizedEmail, otp).catch((err: any) => {
-            logger.warn('Asynchronous OTP email dispatch error', { error: err.message, email: normalizedEmail });
-          });
+          const emailSent = await emailService.sendVerificationOTP(normalizedEmail, otp);
+          if (!emailSent) {
+            logger.error('Failed to dispatch re-registration OTP email (phone match)', { email: normalizedEmail });
+            throw new BadRequestError('Could not send verification email. Please try again in a moment.');
+          }
           return {
             message: 'Account pending verification. A new verification OTP has been sent to your email.',
             userId: existingByPhone.id,
@@ -98,7 +102,14 @@ export const authService = {
     const otp = await otpService.generateAndSave(normalizedEmail, 'registration');
     const emailSent = await emailService.sendVerificationOTP(normalizedEmail, otp);
     if (!emailSent) {
-      logger.error('Failed to dispatch registration OTP email', { email: normalizedEmail });
+      logger.error('Failed to dispatch registration OTP email — user created but email not sent', { email: normalizedEmail, userId: newUser.id });
+      // User is created but email failed — tell them to retry via resend
+      return {
+        message: 'Account created but we could not send the verification email right now. Please use "Resend code" on the verification page.',
+        userId: newUser.id,
+        email: newUser.email,
+        requiresVerification: true
+      };
     }
 
     return {

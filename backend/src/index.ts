@@ -122,6 +122,71 @@ app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'ok', service: 'campus-radar-backend', timestamp: new Date().toISOString() });
 });
 
+// SMTP health check — verifies transporter can connect to Gmail SMTP
+// NOTE: This endpoint does NOT send any email, it only tests the connection.
+app.get('/health/smtp', async (_req, res) => {
+  try {
+    const nodemailer = (await import('nodemailer')).default;
+    const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const smtpUser = process.env.SMTP_USER || '';
+    const smtpPass = (process.env.SMTP_PASS || '').trim().replace(/\s+/g, '');
+    const isGmail = smtpHost.includes('gmail.com') || smtpUser.includes('@gmail.com');
+
+    if (!smtpUser || !smtpPass) {
+      res.status(500).json({
+        status: 'error',
+        message: 'SMTP credentials missing from environment',
+        hasHost: !!smtpHost,
+        hasUser: !!smtpUser,
+        hasPass: !!smtpPass
+      });
+      return;
+    }
+
+    let testTransporter;
+    if (isGmail) {
+      testTransporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: smtpUser, pass: smtpPass },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000
+      });
+    } else {
+      testTransporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: Number(process.env.SMTP_PORT) || 465,
+        secure: true,
+        auth: { user: smtpUser, pass: smtpPass },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
+        tls: { rejectUnauthorized: false }
+      });
+    }
+
+    await testTransporter.verify();
+    testTransporter.close();
+
+    res.status(200).json({
+      status: 'ok',
+      smtp: 'verified',
+      host: smtpHost,
+      user: smtpUser.substring(0, 5) + '***',
+      isGmail,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      status: 'error',
+      smtp: 'failed',
+      error: err.message,
+      code: err.code,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // CRITICAL SECURITY REQUIREMENT:
 // Public route '/admin' returns 404 for EVERYONE (no security through obscurity reliance,
 // but completely prevents discovery of admin portal via common URL guessing).

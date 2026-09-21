@@ -10,6 +10,7 @@ export interface EmailOptions {
 }
 
 let transporter: Transporter | null = null;
+let transporterVerified = false;
 
 function getCleanSmtpConfig() {
   const rawHost = (env.SMTP_HOST || '').trim();
@@ -28,13 +29,30 @@ function getCleanSmtpConfig() {
   };
 }
 
-function getTransporter(): Transporter | null {
-  if (transporter) return transporter;
-
+async function getVerifiedTransporter(): Promise<Transporter | null> {
   const config = getCleanSmtpConfig();
-  if (config.isValid) {
-    const isGmail = config.host.includes('gmail.com') || config.user.includes('@gmail.com');
 
+  if (!config.isValid) {
+    logger.error('SMTP credentials are missing — cannot send emails', {
+      hasHost: !!config.host,
+      hasUser: !!config.user,
+      hasPass: !!config.pass
+    });
+    return null;
+  }
+
+  // If we already have a verified transporter, return it
+  if (transporter && transporterVerified) {
+    return transporter;
+  }
+
+  // Create fresh transporter (reset cached one if verification previously failed)
+  transporter = null;
+  transporterVerified = false;
+
+  const isGmail = config.host.includes('gmail.com') || config.user.includes('@gmail.com');
+
+  try {
     if (isGmail) {
       transporter = nodemailer.createTransport({
         service: 'gmail',
@@ -42,9 +60,9 @@ function getTransporter(): Transporter | null {
           user: config.user,
           pass: config.pass
         },
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 20000
+        connectionTimeout: 20000,
+        greetingTimeout: 20000,
+        socketTimeout: 30000
       });
     } else {
       transporter = nodemailer.createTransport({
@@ -55,73 +73,97 @@ function getTransporter(): Transporter | null {
           user: config.user,
           pass: config.pass
         },
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 20000,
+        connectionTimeout: 20000,
+        greetingTimeout: 20000,
+        socketTimeout: 30000,
         tls: {
           rejectUnauthorized: false
         }
       });
     }
 
-    logger.info('Initialized SMTP email transporter', {
+    // Verify SMTP connection is actually working before caching
+    await transporter.verify();
+    transporterVerified = true;
+
+    logger.info('SMTP transporter verified and ready', {
+      host: config.host,
+      port: config.port,
+      isGmail,
+      user: config.user.substring(0, 5) + '***'
+    });
+
+    return transporter;
+  } catch (error: any) {
+    logger.error('SMTP transporter verification failed — emails will NOT be sent', {
+      error: error.message,
+      code: error.code,
       host: config.host,
       port: config.port,
       isGmail
     });
+    transporter = null;
+    transporterVerified = false;
+    return null;
   }
-
-  return transporter;
 }
 
 export const emailService = {
   async sendEmail(options: EmailOptions): Promise<boolean> {
-    const mailTransporter = getTransporter();
     const config = getCleanSmtpConfig();
 
-    logger.info('Email dispatch triggered', {
+    logger.info('Email dispatch requested', {
       to: options.to,
       subject: options.subject,
-      hasSmtp: !!mailTransporter
+      smtpConfigured: config.isValid
     });
 
-    if (mailTransporter && config.isValid) {
-      try {
-        // For Gmail SMTP, sender address must match the authenticated account
-        const isGmail = config.host.includes('gmail.com') || config.user.includes('@gmail.com');
-        const fromAddress = isGmail
-          ? `"Campus Radar" <${config.user}>`
-          : (env.SMTP_FROM || `"Campus Radar" <${config.user}>`);
+    if (!config.isValid) {
+      logger.error('SMTP not configured — email NOT sent', { to: options.to });
+      return false;
+    }
 
-        const info = await mailTransporter.sendMail({
-          from: fromAddress,
-          to: options.to,
-          subject: options.subject,
-          text: options.text,
-          html: options.html
-        });
+    const mailTransporter = await getVerifiedTransporter();
+    if (!mailTransporter) {
+      logger.error('SMTP transporter unavailable — email NOT sent', { to: options.to });
+      return false;
+    }
 
-        logger.info('Email sent successfully via SMTP', { messageId: info?.messageId, to: options.to });
-        return true;
-      } catch (error: any) {
-        logger.error('SMTP email dispatch failed', { error: error.message, to: options.to });
-        return false;
-      }
-    } else {
-      if (env.NODE_ENV === 'production') {
-        logger.warn('SMTP credentials not configured in environment. Verification email simulated.', { to: options.to });
-      } else {
-        // Development console fallback when SMTP credentials are not yet configured in .env
-        console.log('\n================ [EMAIL OTP DISPATCH] ================');
-        console.log(`From:    ${env.SMTP_FROM}`);
-        console.log(`To:      ${options.to}`);
-        console.log(`Subject: ${options.subject}`);
-        console.log(`Body:    ${options.text}`);
-        console.log('------------------------------------------------------');
-        console.log('NOTE: To send real emails, set SMTP_HOST, SMTP_USER, and SMTP_PASS in backend/.env');
-        console.log('======================================================\n');
-      }
+    try {
+      // For Gmail SMTP, sender address must match the authenticated account
+      const isGmail = config.host.includes('gmail.com') || config.user.includes('@gmail.com');
+      const fromAddress = isGmail
+        ? `"Campus Radar" <${config.user}>`
+        : (env.SMTP_FROM || `"Campus Radar" <${config.user}>`);
+
+      const info = await mailTransporter.sendMail({
+        from: fromAddress,
+        to: options.to,
+        subject: options.subject,
+        text: options.text,
+        html: options.html
+      });
+
+      logger.info('Email sent successfully via SMTP', {
+        messageId: info?.messageId,
+        to: options.to,
+        accepted: info?.accepted,
+        rejected: info?.rejected
+      });
       return true;
+    } catch (error: any) {
+      logger.error('SMTP email dispatch failed', {
+        error: error.message,
+        code: error.code,
+        command: error.command,
+        to: options.to
+      });
+
+      // Reset cached transporter so next attempt creates a fresh one
+      transporter = null;
+      transporterVerified = false;
+
+      return false;
     }
   },
 
@@ -150,4 +192,3 @@ export const emailService = {
     return this.sendEmail({ to: email, subject, text, html });
   }
 };
-
