@@ -122,66 +122,53 @@ app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'ok', service: 'campus-radar-backend', timestamp: new Date().toISOString() });
 });
 
-// SMTP health check — verifies transporter can connect to Gmail SMTP
-// NOTE: This endpoint does NOT send any email, it only tests the connection.
-app.get('/health/smtp', async (_req, res) => {
+// Email health check — verifies Resend API key is configured and valid
+app.get('/health/email', async (_req, res) => {
   try {
-    const nodemailer = (await import('nodemailer')).default;
-    const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-    const smtpUser = process.env.SMTP_USER || '';
-    const smtpPass = (process.env.SMTP_PASS || '').trim().replace(/\s+/g, '');
-    const isGmail = smtpHost.includes('gmail.com') || smtpUser.includes('@gmail.com');
+    const apiKey = (process.env.RESEND_API_KEY || '').trim();
+    const fromAddress = process.env.RESEND_FROM || 'Campus Radar <onboarding@resend.dev>';
 
-    if (!smtpUser || !smtpPass) {
+    if (!apiKey) {
       res.status(500).json({
         status: 'error',
-        message: 'SMTP credentials missing from environment',
-        hasHost: !!smtpHost,
-        hasUser: !!smtpUser,
-        hasPass: !!smtpPass
+        message: 'RESEND_API_KEY is not set in environment variables',
+        provider: 'resend',
+        timestamp: new Date().toISOString()
       });
       return;
     }
 
-    let testTransporter;
-    if (isGmail) {
-      testTransporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: { user: smtpUser, pass: smtpPass },
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 20000
+    // Verify the API key by calling the Resend domains endpoint (lightweight, no email sent)
+    const testResponse = await fetch('https://api.resend.com/domains', {
+      headers: { 'Authorization': `Bearer ${apiKey}` }
+    });
+
+    if (testResponse.ok) {
+      const domains = await testResponse.json();
+      res.status(200).json({
+        status: 'ok',
+        provider: 'resend',
+        apiKeyValid: true,
+        from: fromAddress,
+        domains: domains.data?.map((d: any) => ({ name: d.name, status: d.status })) || [],
+        timestamp: new Date().toISOString()
       });
     } else {
-      testTransporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: Number(process.env.SMTP_PORT) || 465,
-        secure: true,
-        auth: { user: smtpUser, pass: smtpPass },
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 20000,
-        tls: { rejectUnauthorized: false }
+      const errorData = await testResponse.json().catch(() => ({}));
+      res.status(500).json({
+        status: 'error',
+        provider: 'resend',
+        apiKeyValid: false,
+        httpStatus: testResponse.status,
+        error: errorData.message || 'API key validation failed',
+        timestamp: new Date().toISOString()
       });
     }
-
-    await testTransporter.verify();
-    testTransporter.close();
-
-    res.status(200).json({
-      status: 'ok',
-      smtp: 'verified',
-      host: smtpHost,
-      user: smtpUser.substring(0, 5) + '***',
-      isGmail,
-      timestamp: new Date().toISOString()
-    });
   } catch (err: any) {
     res.status(500).json({
       status: 'error',
-      smtp: 'failed',
+      provider: 'resend',
       error: err.message,
-      code: err.code,
       timestamp: new Date().toISOString()
     });
   }

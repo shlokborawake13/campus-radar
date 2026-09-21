@@ -1,4 +1,4 @@
-import nodemailer, { type Transporter } from 'nodemailer';
+import { Resend } from 'resend';
 import { logger } from '../utils/logger.js';
 import { env } from '../config/env.js';
 
@@ -9,160 +9,68 @@ export interface EmailOptions {
   html?: string;
 }
 
-let transporter: Transporter | null = null;
-let transporterVerified = false;
+// Resend uses HTTPS (port 443) — works on Render free tier
+// SMTP is blocked on Render (ports 25, 465, 587 are all blocked)
+let resendClient: Resend | null = null;
 
-function getCleanSmtpConfig() {
-  const rawHost = (env.SMTP_HOST || '').trim();
-  const rawUser = (env.SMTP_USER || '').trim();
-  const rawPass = (env.SMTP_PASS || '').trim().replace(/\s+/g, '');
-  const port = Number(env.SMTP_PORT) || 587;
-  const isSecure = env.SMTP_SECURE === true || port === 465;
+function getResendClient(): Resend | null {
+  if (resendClient) return resendClient;
 
-  return {
-    host: rawHost,
-    user: rawUser,
-    pass: rawPass,
-    port,
-    secure: isSecure,
-    isValid: Boolean(rawHost && rawUser && rawPass)
-  };
-}
-
-async function getVerifiedTransporter(): Promise<Transporter | null> {
-  const config = getCleanSmtpConfig();
-
-  if (!config.isValid) {
-    logger.error('SMTP credentials are missing — cannot send emails', {
-      hasHost: !!config.host,
-      hasUser: !!config.user,
-      hasPass: !!config.pass
-    });
+  const apiKey = (env.RESEND_API_KEY || '').trim();
+  if (!apiKey) {
+    logger.error('RESEND_API_KEY is not configured — emails cannot be sent');
     return null;
   }
 
-  // If we already have a verified transporter, return it
-  if (transporter && transporterVerified) {
-    return transporter;
-  }
-
-  // Create fresh transporter (reset cached one if verification previously failed)
-  transporter = null;
-  transporterVerified = false;
-
-  const isGmail = config.host.includes('gmail.com') || config.user.includes('@gmail.com');
-
-  try {
-    if (isGmail) {
-      transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: config.user,
-          pass: config.pass
-        },
-        connectionTimeout: 20000,
-        greetingTimeout: 20000,
-        socketTimeout: 30000
-      });
-    } else {
-      transporter = nodemailer.createTransport({
-        host: config.host,
-        port: config.port,
-        secure: config.secure,
-        auth: {
-          user: config.user,
-          pass: config.pass
-        },
-        connectionTimeout: 20000,
-        greetingTimeout: 20000,
-        socketTimeout: 30000,
-        tls: {
-          rejectUnauthorized: false
-        }
-      });
-    }
-
-    // Verify SMTP connection is actually working before caching
-    await transporter.verify();
-    transporterVerified = true;
-
-    logger.info('SMTP transporter verified and ready', {
-      host: config.host,
-      port: config.port,
-      isGmail,
-      user: config.user.substring(0, 5) + '***'
-    });
-
-    return transporter;
-  } catch (error: any) {
-    logger.error('SMTP transporter verification failed — emails will NOT be sent', {
-      error: error.message,
-      code: error.code,
-      host: config.host,
-      port: config.port,
-      isGmail
-    });
-    transporter = null;
-    transporterVerified = false;
-    return null;
-  }
+  resendClient = new Resend(apiKey);
+  logger.info('Resend email client initialized');
+  return resendClient;
 }
 
 export const emailService = {
   async sendEmail(options: EmailOptions): Promise<boolean> {
-    const config = getCleanSmtpConfig();
-
     logger.info('Email dispatch requested', {
       to: options.to,
-      subject: options.subject,
-      smtpConfigured: config.isValid
+      subject: options.subject
     });
 
-    if (!config.isValid) {
-      logger.error('SMTP not configured — email NOT sent', { to: options.to });
-      return false;
-    }
-
-    const mailTransporter = await getVerifiedTransporter();
-    if (!mailTransporter) {
-      logger.error('SMTP transporter unavailable — email NOT sent', { to: options.to });
+    const client = getResendClient();
+    if (!client) {
+      logger.error('Resend client unavailable — email NOT sent', { to: options.to });
       return false;
     }
 
     try {
-      // For Gmail SMTP, sender address must match the authenticated account
-      const isGmail = config.host.includes('gmail.com') || config.user.includes('@gmail.com');
-      const fromAddress = isGmail
-        ? `"Campus Radar" <${config.user}>`
-        : (env.SMTP_FROM || `"Campus Radar" <${config.user}>`);
+      const fromAddress = (env.RESEND_FROM || '').trim() || 'Campus Radar <onboarding@resend.dev>';
 
-      const info = await mailTransporter.sendMail({
+      const { data, error } = await client.emails.send({
         from: fromAddress,
-        to: options.to,
+        to: [options.to],
         subject: options.subject,
         text: options.text,
-        html: options.html
+        html: options.html || undefined
       });
 
-      logger.info('Email sent successfully via SMTP', {
-        messageId: info?.messageId,
-        to: options.to,
-        accepted: info?.accepted,
-        rejected: info?.rejected
+      if (error) {
+        logger.error('Resend API returned error', {
+          error: error.message,
+          name: error.name,
+          to: options.to
+        });
+        return false;
+      }
+
+      logger.info('Email sent successfully via Resend', {
+        emailId: data?.id,
+        to: options.to
       });
       return true;
     } catch (error: any) {
-      logger.error('SMTP email dispatch failed', {
+      logger.error('Resend email dispatch failed', {
         error: error.message,
-        code: error.code,
-        command: error.command,
+        statusCode: error.statusCode,
         to: options.to
       });
-
-      // Reset cached transporter so next attempt creates a fresh one
-      transporter = null;
-      transporterVerified = false;
-
       return false;
     }
   },
