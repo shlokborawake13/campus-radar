@@ -1,4 +1,4 @@
-import { Resend } from 'resend';
+import nodemailer, { type Transporter } from 'nodemailer';
 import { logger } from '../utils/logger.js';
 import { env } from '../config/env.js';
 
@@ -9,93 +9,166 @@ export interface EmailOptions {
   html?: string;
 }
 
-// Resend uses HTTPS (port 443) — works on Render free tier
-// SMTP is blocked on Render (ports 25, 465, 587 are all blocked)
-let resendClient: Resend | null = null;
+let smtpTransporter: Transporter | null = null;
 
-function getResendClient(): Resend | null {
-  if (resendClient) return resendClient;
+function getSmtpTransporter(): Transporter | null {
+  if (smtpTransporter) return smtpTransporter;
 
-  const apiKey = (env.RESEND_API_KEY || '').trim();
-  if (!apiKey) {
-    logger.error('RESEND_API_KEY is not configured — emails cannot be sent');
+  const host = (env.SMTP_HOST || 'smtp.gmail.com').trim();
+  const user = (env.SMTP_USER || '').trim();
+  // Strip any spaces from app password (e.g. "jmiz wvcn wqxj sxkn" -> "jmizwvcnwqxjsxkn")
+  const pass = (env.SMTP_PASS || '').replace(/\s+/g, '');
+  const port = Number(env.SMTP_PORT) || 465;
+  const secure = env.SMTP_SECURE !== false && port === 465;
+
+  if (!host || !user || !pass) {
+    logger.error('SMTP credentials are incomplete — emails cannot be sent', {
+      hasHost: !!host,
+      hasUser: !!user,
+      hasPass: !!pass
+    });
     return null;
   }
 
-  resendClient = new Resend(apiKey);
-  logger.info('Resend email client initialized');
-  return resendClient;
+  const isGmail = host.toLowerCase().includes('gmail.com') || user.toLowerCase().endsWith('@gmail.com');
+
+  if (isGmail) {
+    smtpTransporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user, pass },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000
+    });
+  } else {
+    smtpTransporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
+      tls: { rejectUnauthorized: false }
+    });
+  }
+
+  return smtpTransporter;
+}
+
+/**
+ * Startup diagnostic: verifies SMTP connectivity and credentials.
+ */
+export async function initEmailService(): Promise<void> {
+  const transporter = getSmtpTransporter();
+  if (!transporter) {
+    logger.warn('SMTP configuration: incomplete — check SMTP_HOST, SMTP_USER, SMTP_PASS');
+    return;
+  }
+
+  try {
+    await transporter.verify();
+    logger.info('SMTP service ready: connected and verified successfully', {
+      host: env.SMTP_HOST || 'smtp.gmail.com',
+      user: env.SMTP_USER
+    });
+  } catch (err: any) {
+    logger.error('SMTP service error: verification failed', {
+      error: err.message,
+      code: err.code
+    });
+  }
+}
+
+/**
+ * Core email delivery via Nodemailer SMTP.
+ */
+async function sendViaSmtp(options: EmailOptions): Promise<boolean> {
+  const transporter = getSmtpTransporter();
+  if (!transporter) {
+    logger.error('SMTP transporter unavailable — email NOT sent', { to: options.to });
+    return false;
+  }
+
+  try {
+    const user = (env.SMTP_USER || '').trim();
+    const fromAddress = env.SMTP_FROM || `"Campus Radar" <${user}>`;
+
+    const info = await transporter.sendMail({
+      from: fromAddress,
+      to: options.to,
+      subject: options.subject,
+      text: options.text,
+      html: options.html
+    });
+
+    logger.info('Email sent successfully via SMTP', {
+      messageId: info?.messageId,
+      to: options.to
+    });
+    return true;
+  } catch (error: any) {
+    logger.error('SMTP dispatch failed', {
+      error: error.message,
+      code: error.code,
+      to: options.to
+    });
+    // Reset cached transporter so subsequent attempts create a fresh connection
+    smtpTransporter = null;
+    return false;
+  }
 }
 
 export const emailService = {
   async sendEmail(options: EmailOptions): Promise<boolean> {
-    logger.info('Email dispatch requested', {
-      to: options.to,
-      subject: options.subject
-    });
-
-    const client = getResendClient();
-    if (!client) {
-      logger.error('Resend client unavailable — email NOT sent', { to: options.to });
-      return false;
-    }
-
-    try {
-      const fromAddress = (env.RESEND_FROM || '').trim() || 'Campus Radar <onboarding@resend.dev>';
-
-      const { data, error } = await client.emails.send({
-        from: fromAddress,
-        to: [options.to],
-        subject: options.subject,
-        text: options.text,
-        html: options.html || undefined
-      });
-
-      if (error) {
-        logger.error('Resend API returned error', {
-          error: error.message,
-          name: error.name,
-          to: options.to
-        });
-        return false;
-      }
-
-      logger.info('Email sent successfully via Resend', {
-        emailId: data?.id,
-        to: options.to
-      });
-      return true;
-    } catch (error: any) {
-      logger.error('Resend email dispatch failed', {
-        error: error.message,
-        statusCode: error.statusCode,
-        to: options.to
-      });
-      return false;
-    }
+    logger.info('Email dispatch requested', { to: options.to, subject: options.subject });
+    return sendViaSmtp(options);
   },
 
   async sendVerificationOTP(email: string, otp: string): Promise<boolean> {
-    const subject = 'Campus Radar — University Verification Code';
-    const text = `Welcome to Campus Radar!\n\nYour 6-digit university verification code is: ${otp}\n\nThis code will expire in ${env.OTP_EXPIRY_MINUTES} minutes. For security reasons, never share this code with anyone.\n\n— The Campus Radar Team`;
-    
+    const subject = 'Your Campus Radar verification code';
+
+    const text = [
+      'Campus Radar',
+      '',
+      'Verify your email address',
+      '',
+      `Your verification code is: ${otp}`,
+      '',
+      `This code expires in ${env.OTP_EXPIRY_MINUTES} minutes.`,
+      '',
+      "If you didn't request this code, you can safely ignore this email.",
+      '',
+      'Do not share this code with anyone.',
+      '',
+      '— Campus Radar'
+    ].join('\n');
+
     const html = `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 32px 24px; background-color: #FAFAFA; border: 1px solid #EEEEEE; border-radius: 12px; color: #1A1A1A;">
-        <div style="margin-bottom: 24px;">
-          <h2 style="margin: 0; font-size: 22px; font-weight: 700; color: #111827; letter-spacing: -0.5px;">CAMPUS RADAR</h2>
-          <p style="margin: 4px 0 0 0; font-size: 13px; color: #6B7280;">Sanjivani University Student Network</p>
-        </div>
-        <div style="background-color: #FFFFFF; padding: 28px; border-radius: 8px; border: 1px solid #E5E7EB;">
-          <p style="font-size: 15px; margin: 0 0 16px 0; color: #374151;">Hello,</p>
-          <p style="font-size: 15px; line-height: 1.5; margin: 0 0 24px 0; color: #374151;">Use the verification code below to verify your student account and access the campus network:</p>
-          <div style="text-align: center; margin: 28px 0;">
-            <span style="display: inline-block; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #2563EB; background: #EFF6FF; padding: 12px 28px; border-radius: 8px; border: 1px dashed #93C5FD;">${otp}</span>
-          </div>
-          <p style="font-size: 13px; color: #6B7280; margin: 24px 0 0 0; line-height: 1.5;">This verification code is valid for <strong>${env.OTP_EXPIRY_MINUTES} minutes</strong>. If you did not request this, you can safely ignore this email.</p>
-        </div>
-        <p style="font-size: 12px; color: #9CA3AF; text-align: center; margin: 24px 0 0 0;">Campus Radar &bull; Exclusive for verified Sanjivani University students</p>
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background-color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:480px;margin:40px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+    <div style="background:#111827;padding:28px 32px;">
+      <h1 style="margin:0;font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">Campus Radar</h1>
+    </div>
+    <div style="padding:32px;">
+      <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#111827;">Verify your email address</h2>
+      <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#4b5563;">Your verification code is:</p>
+      <div style="text-align:center;margin:24px 0;">
+        <span style="display:inline-block;font-size:36px;font-weight:800;letter-spacing:10px;color:#2563eb;background:#eff6ff;padding:16px 32px;border-radius:10px;border:2px dashed #93c5fd;">${otp}</span>
       </div>
-    `;
+      <p style="margin:24px 0 0;font-size:14px;line-height:1.6;color:#6b7280;">This code expires in <strong>${env.OTP_EXPIRY_MINUTES} minutes</strong>.</p>
+      <p style="margin:12px 0 0;font-size:14px;line-height:1.6;color:#6b7280;">If you didn't request this code, you can safely ignore this email.</p>
+      <p style="margin:12px 0 0;font-size:14px;line-height:1.6;color:#6b7280;"><strong>Do not share this code with anyone.</strong></p>
+    </div>
+    <div style="padding:20px 32px;background:#f9fafb;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">Campus Radar &bull; Sanjivani University Student Network</p>
+    </div>
+  </div>
+</body>
+</html>`;
 
     return this.sendEmail({ to: email, subject, text, html });
   }

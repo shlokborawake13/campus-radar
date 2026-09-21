@@ -29,14 +29,10 @@ const envSchema = z.object({
   SUPABASE_SECRET_KEY: z.string().optional(),
   SUPABASE_JWKS_URL: z.string().optional(),
 
-  // Email delivery via Resend HTTP API (Render blocks SMTP ports 25/465/587)
-  RESEND_API_KEY: z.string().default(''),
-  RESEND_FROM: z.string().default('Campus Radar <onboarding@resend.dev>'),
-
-  // Legacy SMTP fields (kept for reference but not used on Render)
+  // SMTP Email Configuration (Nodemailer)
   SMTP_HOST: z.string().default('smtp.gmail.com'),
   SMTP_PORT: z.union([z.string(), z.number()]).default('465').transform((v) => typeof v === 'string' ? parseInt(v, 10) : v),
-  SMTP_SECURE: z.union([z.string(), z.boolean()]).default('true').transform((v) => typeof v === 'string' ? v === 'true' : v),
+  SMTP_SECURE: z.union([z.string(), z.boolean()]).default('true').transform((v) => String(v) === 'true'),
   SMTP_USER: z.string().default(''),
   SMTP_PASS: z.string().default(''),
   SMTP_FROM: z.string().default('')

@@ -16,6 +16,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import { NotFoundError } from './utils/errors.js';
 import { logger } from './utils/logger.js';
+import { initEmailService } from './services/email.service.js';
 
 import authRoutes from './routes/auth.routes.js';
 import studentRoutes from './routes/student.routes.js';
@@ -122,56 +123,22 @@ app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'ok', service: 'campus-radar-backend', timestamp: new Date().toISOString() });
 });
 
-// Email health check — verifies Resend API key is configured and valid
+// Email health check — verifies SMTP configuration
 app.get('/health/email', async (_req, res) => {
-  try {
-    const apiKey = (process.env.RESEND_API_KEY || '').trim();
-    const fromAddress = process.env.RESEND_FROM || 'Campus Radar <onboarding@resend.dev>';
+  const host = (env.SMTP_HOST || '').trim();
+  const user = (env.SMTP_USER || '').trim();
+  const hasPass = Boolean((env.SMTP_PASS || '').trim());
+  const configured = Boolean(host && user && hasPass);
 
-    if (!apiKey) {
-      res.status(500).json({
-        status: 'error',
-        message: 'RESEND_API_KEY is not set in environment variables',
-        provider: 'resend',
-        timestamp: new Date().toISOString()
-      });
-      return;
-    }
-
-    // Verify the API key by calling the Resend domains endpoint (lightweight, no email sent)
-    const testResponse = await fetch('https://api.resend.com/domains', {
-      headers: { 'Authorization': `Bearer ${apiKey}` }
-    });
-
-    if (testResponse.ok) {
-      const domains = await testResponse.json();
-      res.status(200).json({
-        status: 'ok',
-        provider: 'resend',
-        apiKeyValid: true,
-        from: fromAddress,
-        domains: domains.data?.map((d: any) => ({ name: d.name, status: d.status })) || [],
-        timestamp: new Date().toISOString()
-      });
-    } else {
-      const errorData = await testResponse.json().catch(() => ({}));
-      res.status(500).json({
-        status: 'error',
-        provider: 'resend',
-        apiKeyValid: false,
-        httpStatus: testResponse.status,
-        error: errorData.message || 'API key validation failed',
-        timestamp: new Date().toISOString()
-      });
-    }
-  } catch (err: any) {
-    res.status(500).json({
-      status: 'error',
-      provider: 'resend',
-      error: err.message,
-      timestamp: new Date().toISOString()
-    });
-  }
+  res.status(configured ? 200 : 500).json({
+    status: configured ? 'ok' : 'error',
+    provider: 'smtp',
+    configured,
+    host,
+    user,
+    port: env.SMTP_PORT,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // CRITICAL SECURITY REQUIREMENT:
@@ -207,12 +174,17 @@ const HOST = '0.0.0.0';
 
 let server: any = null;
 if (process.env.NODE_ENV !== 'test') {
-  server = app.listen(PORT, HOST, () => {
+  server = app.listen(PORT, HOST, async () => {
     logger.info(`Campus Radar Backend Server listening on http://${HOST}:${PORT}`, {
       environment: env.NODE_ENV,
       port: PORT
       // NOTE: Admin secret path intentionally NOT logged to prevent leakage in log files
     });
+    try {
+      await initEmailService();
+    } catch (err: any) {
+      logger.error('Failed to initialize email service', { error: err.message });
+    }
   });
 }
 
