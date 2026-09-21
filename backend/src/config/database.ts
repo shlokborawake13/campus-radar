@@ -1,6 +1,11 @@
+import dns from 'node:dns';
 import pg from 'pg';
 import { env } from './env.js';
 import { logger } from '../utils/logger.js';
+
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first');
+}
 
 const { Pool } = pg;
 

@@ -1,3 +1,8 @@
+import dns from 'node:dns';
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first');
+}
+
 import express from 'express';
 import helmet from 'helmet';
 import compression from 'compression';
