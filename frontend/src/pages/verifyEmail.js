@@ -127,19 +127,47 @@ export function renderVerifyEmail(container) {
     }
   });
 
-  wrapper.querySelector('#resend-email').addEventListener('click', async () => {
+  let resendCooldown = 0;
+  let resendTimer = null;
+
+  const resendBtn = wrapper.querySelector('#resend-email');
+  resendBtn.addEventListener('click', async () => {
+    if (resendCooldown > 0) return;
+
     const email = getTargetEmail();
     if (!email) {
       showToast('Please enter your email to resend code');
       return;
     }
+
     try {
+      resendBtn.innerText = 'Sending...';
+      resendBtn.style.pointerEvents = 'none';
+
       const res = await api.resendOtp({ email, purpose: 'registration' });
       showToast(res.message || 'New verification code dispatched to your inbox');
+
+      resendCooldown = 60;
+      resendBtn.innerText = `Resend code in ${resendCooldown}s`;
+
+      if (resendTimer) clearInterval(resendTimer);
+      resendTimer = setInterval(() => {
+        resendCooldown -= 1;
+        if (resendCooldown <= 0) {
+          clearInterval(resendTimer);
+          resendBtn.innerText = 'Resend code';
+          resendBtn.style.pointerEvents = 'auto';
+        } else {
+          resendBtn.innerText = `Resend code in ${resendCooldown}s`;
+        }
+      }, 1000);
     } catch (err) {
       showToast(err.message || 'Could not resend OTP');
+      resendBtn.innerText = 'Resend code';
+      resendBtn.style.pointerEvents = 'auto';
     }
   });
 
   container.appendChild(wrapper);
 }
+

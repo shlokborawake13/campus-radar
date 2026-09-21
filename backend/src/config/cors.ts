@@ -1,7 +1,14 @@
 import cors from 'cors';
 import { env } from './env.js';
 
-const allowedOrigins = env.ALLOWED_ORIGINS.split(',').map((o) => o.trim());
+const configuredOrigins = env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean);
+
+// Explicitly whitelist production origins and configured origins
+const allowedOriginsSet = new Set([
+  'https://campus-radar-brown.vercel.app',
+  'https://campus-radar.vercel.app',
+  ...configuredOrigins
+]);
 
 export const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
@@ -21,13 +28,13 @@ export const corsOptions: cors.CorsOptions = {
       }
     }
 
-    // Check configured allowed origins
-    if (allowedOrigins.includes(origin)) {
+    // Check configured and explicitly allowed origins
+    if (allowedOriginsSet.has(origin)) {
       return callback(null, true);
     }
 
     // Allow official and preview Vercel deployments for Campus Radar
-    if (/^https:\/\/campus-radar[a-z0-9-]*\.vercel\.app$/.test(origin) || origin === 'https://campus-radar.vercel.app') {
+    if (/^https:\/\/campus-radar[a-z0-9-]*\.vercel\.app$/.test(origin)) {
       return callback(null, true);
     }
 
@@ -36,8 +43,12 @@ export const corsOptions: cors.CorsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Server-Timing', 'X-Request-ID'],
+  maxAge: 86400,
+  optionsSuccessStatus: 204
 };
 
 export const corsMiddleware = cors(corsOptions);
+
 

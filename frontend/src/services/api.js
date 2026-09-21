@@ -3,24 +3,57 @@
    Manages tokens, refresh rotation, error handling
    ============================================ */
 
-const DEFAULT_API_URL = typeof window !== 'undefined' && (window.location.hostname.includes('vercel.app') || window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
-  ? 'https://campus-radar-dzc6.onrender.com/api'
+const PROD_API_URL = 'https://campus-radar-dzc6.onrender.com/api';
+const DEFAULT_API_URL = typeof window !== 'undefined' && (window.location.hostname.includes('vercel.app') || (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'))
+  ? PROD_API_URL
   : '/api';
 
-const API_BASE = (import.meta.env.VITE_API_URL || DEFAULT_API_URL).replace(/\/+$/, '');
-
+const RAW_API_URL = (import.meta.env?.VITE_API_URL || DEFAULT_API_URL).trim().replace(/\/+$/, '');
+const API_BASE = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
 
 export const tokenStorage = {
-  getAccessToken: () => localStorage.getItem('cr_access_token'),
-  getRefreshToken: () => localStorage.getItem('cr_refresh_token'),
+  getAccessToken: () => {
+    try {
+      const token = localStorage.getItem('cr_access_token');
+      if (!token || token === 'undefined' || token === 'null' || !token.trim()) {
+        return null;
+      }
+      return token.trim();
+    } catch {
+      return null;
+    }
+  },
+  getRefreshToken: () => {
+    try {
+      const token = localStorage.getItem('cr_refresh_token');
+      if (!token || token === 'undefined' || token === 'null' || !token.trim()) {
+        return null;
+      }
+      return token.trim();
+    } catch {
+      return null;
+    }
+  },
   setTokens: (accessToken, refreshToken) => {
-    if (accessToken) localStorage.setItem('cr_access_token', accessToken);
-    if (refreshToken) localStorage.setItem('cr_refresh_token', refreshToken);
+    try {
+      if (accessToken && typeof accessToken === 'string' && accessToken !== 'undefined' && accessToken !== 'null') {
+        localStorage.setItem('cr_access_token', accessToken.trim());
+      }
+      if (refreshToken && typeof refreshToken === 'string' && refreshToken !== 'undefined' && refreshToken !== 'null') {
+        localStorage.setItem('cr_refresh_token', refreshToken.trim());
+      }
+    } catch (err) {
+      console.error('Failed to store auth tokens:', err);
+    }
   },
   clearTokens: () => {
-    localStorage.removeItem('cr_access_token');
-    localStorage.removeItem('cr_refresh_token');
-    localStorage.removeItem('cr_user');
+    try {
+      localStorage.removeItem('cr_access_token');
+      localStorage.removeItem('cr_refresh_token');
+      localStorage.removeItem('cr_user');
+    } catch (err) {
+      console.error('Failed to clear auth tokens:', err);
+    }
   },
   getUser: () => {
     try {
@@ -28,17 +61,76 @@ export const tokenStorage = {
       return raw ? JSON.parse(raw) : null;
     } catch {
       // Corrupted user data — clear it
-      localStorage.removeItem('cr_user');
+      try { localStorage.removeItem('cr_user'); } catch {}
       return null;
     }
   },
   setUser: (user) => {
-    localStorage.setItem('cr_user', JSON.stringify(user));
+    try {
+      if (user) {
+        localStorage.setItem('cr_user', JSON.stringify(user));
+      } else {
+        localStorage.removeItem('cr_user');
+      }
+    } catch (err) {
+      console.error('Failed to persist user profile:', err);
+    }
   }
 };
 
+// Global single-flight refresh lock to prevent concurrent 401 refresh storms
+let refreshPromise = null;
+
+async function executeTokenRefresh() {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const refreshToken = tokenStorage.getRefreshToken();
+    if (!refreshToken) {
+      tokenStorage.clearTokens();
+      return null;
+    }
+
+    try {
+      const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken })
+      });
+
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        if (data?.tokens?.accessToken) {
+          tokenStorage.setTokens(data.tokens.accessToken, data.tokens.refreshToken || refreshToken);
+          return data.tokens.accessToken;
+        }
+      }
+      // If refresh rejected (expired/revoked), clear frontend tokens
+      tokenStorage.clearTokens();
+      return null;
+    } catch {
+      tokenStorage.clearTokens();
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+function normalizeEndpoint(endpoint) {
+  let ep = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  // Prevent duplicate /api/api/
+  if (ep.startsWith('/api/')) {
+    ep = ep.replace(/^\/api/, '');
+  }
+  return ep;
+}
+
 async function request(endpoint, options = {}) {
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`;
+  const cleanEndpoint = normalizeEndpoint(endpoint);
+  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${cleanEndpoint}`;
   const headers = {
     ...(options.headers || {})
   };
@@ -47,44 +139,49 @@ async function request(endpoint, options = {}) {
     headers['Content-Type'] = 'application/json';
   }
 
+  // Only attach Authorization header when a valid non-empty access token exists
   const accessToken = tokenStorage.getAccessToken();
   if (accessToken && !headers.Authorization) {
     headers.Authorization = `Bearer ${accessToken}`;
   }
 
-  let response = await fetch(url, { ...options, headers });
+  let response;
+  try {
+    response = await fetch(url, { ...options, headers });
+  } catch {
+    const netErr = new Error('Unable to connect to Campus Radar. Please try again.');
+    netErr.status = 0;
+    throw netErr;
+  }
 
-  // Handle 401: try refresh token rotation once
-  if (response.status === 401 && tokenStorage.getRefreshToken() && !options._retry) {
+  // Handle 401: try token refresh exactly once via the single refresh lock
+  if (response.status === 401 && tokenStorage.getRefreshToken() && !options._retry && !cleanEndpoint.startsWith('/auth/login') && !cleanEndpoint.startsWith('/auth/register') && !cleanEndpoint.startsWith('/auth/refresh')) {
     options._retry = true;
-    try {
-      const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: tokenStorage.getRefreshToken() })
-      });
-
-      if (refreshRes.ok) {
-        const data = await refreshRes.json();
-        tokenStorage.setTokens(data.tokens.accessToken, data.tokens.refreshToken);
-        headers.Authorization = `Bearer ${data.tokens.accessToken}`;
+    const newAccessToken = await executeTokenRefresh();
+    if (newAccessToken) {
+      headers.Authorization = `Bearer ${newAccessToken}`;
+      try {
         response = await fetch(url, { ...options, headers });
-      } else {
-        tokenStorage.clearTokens();
+      } catch {
+        const netErr = new Error('Unable to connect to Campus Radar. Please try again.');
+        netErr.status = 0;
+        throw netErr;
       }
-    } catch {
-      tokenStorage.clearTokens();
     }
   }
 
-  // Handle 403 (banned/suspended): clear tokens to prevent infinite refresh loops
-  if (response.status === 403 && !options._retry) {
+  // Handle 403 (banned/suspended) or permanent 401: clear tokens
+  if (response.status === 403 && !cleanEndpoint.startsWith('/auth/login')) {
     tokenStorage.clearTokens();
   }
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(data.error || 'Network request failed');
+    let message = data.error || data.message || 'Network request failed';
+    if (response.status === 401 && (message.includes('Invalid') || message.includes('password') || message.includes('credentials'))) {
+      message = 'Invalid email or password.';
+    }
+    const error = new Error(message);
     error.status = response.status;
     error.code = data.code;
     throw error;
@@ -99,10 +196,14 @@ export const api = {
   verifyOtp: (body) => request('/auth/verify-otp', { method: 'POST', body: JSON.stringify(body) }),
   resendOtp: (body) => request('/auth/resend-otp', { method: 'POST', body: JSON.stringify(body) }),
   login: (body) => request('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
-  logout: () => {
+  logout: async () => {
     const refreshToken = tokenStorage.getRefreshToken();
     tokenStorage.clearTokens();
-    return request('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) });
+    if (refreshToken) {
+      try {
+        await request('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) });
+      } catch {}
+    }
   },
   getMe: () => request('/auth/me'),
 

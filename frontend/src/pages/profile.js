@@ -13,10 +13,12 @@ export function renderProfile(container) {
   const wrapper = document.createElement('div');
   wrapper.className = 'page-wrapper';
 
-  const localUser = tokenStorage.getUser();
+  const token = tokenStorage.getAccessToken();
+  const localUser = token ? tokenStorage.getUser() : null;
   const isAdmin = localUser?.role === 'admin' || localUser?.role === 'super_admin';
 
-  if (!localUser) {
+  if (!localUser || !token) {
+    tokenStorage.clearTokens();
     wrapper.innerHTML = `
       <div class="page-content page-content--feed">
         <div class="card" style="text-align: center; padding: var(--space-12) var(--space-6);">

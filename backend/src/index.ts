@@ -23,10 +23,14 @@ import adminRoutes from './routes/admin.routes.js';
 
 const app = express();
 
-// High-resolution request timing & Server-Timing headers
+// 1. CORS middleware FIRST to ensure OPTIONS preflight and cross-origin headers are applied before any other middleware
+app.use(corsMiddleware);
+app.options('*', corsMiddleware);
+
+// 2. High-resolution request timing & Server-Timing headers
 app.use(requestTiming);
 
-// Response compression for text/json payloads > 1KB (reduces network transfer times)
+// 3. Response compression for text/json payloads > 1KB (reduces network transfer times)
 app.use(compression({
   threshold: 1024,
   filter: (req, res) => {
@@ -35,10 +39,10 @@ app.use(compression({
   }
 }));
 
-// Trust first proxy (required for correct IP in rate-limiting & audit logs behind reverse proxies)
+// 4. Trust first proxy (required for correct IP in rate-limiting & audit logs behind reverse proxies)
 app.set('trust proxy', 1);
 
-// Security HTTP headers via Helmet
+// 5. Security HTTP headers via Helmet
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   contentSecurityPolicy: {
@@ -57,17 +61,14 @@ app.use(helmet({
   }
 }));
 
-// Custom security headers (X-Request-ID, HSTS, Permissions-Policy, etc.)
+// 6. Custom security headers (X-Request-ID, HSTS, Permissions-Policy, etc.)
 app.use(securityHeaders);
 
-// CORS middleware
-app.use(corsMiddleware);
-
-// JSON body parsing with payload size limits (prevents memory exhaustion DoS)
+// 7. JSON body parsing with payload size limits (prevents memory exhaustion DoS)
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// Global Rate Limiting
+// 8. Global Rate Limiting
 app.use(globalLimiter);
 
 // Strict Cache-Control for all dynamic API endpoints (prevents leakage of personalized is_liked/is_saved/profile state)
@@ -94,6 +95,24 @@ app.get('/', (_req, res) => {
   });
 });
 app.head('/', (_req, res) => {
+  res.status(200).end();
+});
+
+// Root API status endpoint
+app.get('/api', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'campus-radar-api',
+    version: '1.0.0',
+    endpoints: {
+      auth: '/api/auth',
+      posts: '/api/posts',
+      events: '/api/events',
+      confessions: '/api/confessions'
+    }
+  });
+});
+app.head('/api', (_req, res) => {
   res.status(200).end();
 });
 

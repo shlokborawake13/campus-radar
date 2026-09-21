@@ -459,6 +459,28 @@ async function runSecurityTests() {
   const { sessionRepo } = await import('../repositories/session.repo.js');
   assert('sessionRepo.enforceMaxSessions is exported and callable', typeof sessionRepo.enforceMaxSessions === 'function');
 
+  // Test 19: CORS Production & Preflight Configuration
+  console.log('\n19. CORS Production & Whitelist Configuration:');
+  const { corsOptions } = await import('../config/cors.js');
+  
+  let originAllowed = false;
+  const testCors = (origin: string | undefined): Promise<boolean> => {
+    return new Promise((resolve) => {
+      (corsOptions.origin as any)(origin, (_err: any, allow: boolean) => {
+        resolve(allow);
+      });
+    });
+  };
+
+  assert('Allows production origin https://campus-radar-brown.vercel.app', await testCors('https://campus-radar-brown.vercel.app'));
+  assert('Allows primary domain https://campus-radar.vercel.app', await testCors('https://campus-radar.vercel.app'));
+  assert('Allows preview vercel subdomain https://campus-radar-pr-12.vercel.app', await testCors('https://campus-radar-pr-12.vercel.app'));
+  assert('Allows server-to-server or no origin (null/undefined)', await testCors(undefined));
+  assert('Strictly rejects malicious third-party origin https://evil-phishing.com', !(await testCors('https://evil-phishing.com')));
+  assert('CORS methods include OPTIONS and standard HTTP verbs', Boolean(Array.isArray(corsOptions.methods) && corsOptions.methods.includes('OPTIONS') && corsOptions.methods.includes('POST')));
+  assert('CORS allowed headers include Authorization and Content-Type', Boolean(Array.isArray(corsOptions.allowedHeaders) && corsOptions.allowedHeaders.includes('Authorization') && corsOptions.allowedHeaders.includes('Content-Type')));
+  assert('CORS preflight maxAge is configured (86400)', corsOptions.maxAge === 86400);
+
   await pool.end();
 
   console.log(`\n--- TEST SUMMARY: ${passed} PASSED, ${failed} FAILED ---`);
