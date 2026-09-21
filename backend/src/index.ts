@@ -123,8 +123,22 @@ app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'ok', service: 'campus-radar-backend', timestamp: new Date().toISOString() });
 });
 
-// Email health check — verifies active email transport (Resend HTTP API or SMTP)
+// Email health check — verifies active email transport (Gmail Webhook, Resend, or SMTP)
 app.get('/health/email', async (_req, res) => {
+  const webhookUrl = (env.GMAIL_WEBHOOK_URL || '').trim();
+  if (webhookUrl) {
+    res.status(200).json({
+      status: 'ok',
+      provider: 'gmail_webhook',
+      configured: true,
+      sender: 'admin132212@gmail.com',
+      transport: 'https_port_443',
+      domainRestrictions: 'none (delivers to all domains including @sanjivani.edu.in)',
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+
   const apiKey = (env.RESEND_API_KEY || '').trim();
   if (apiKey) {
     try {

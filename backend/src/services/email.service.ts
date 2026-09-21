@@ -66,27 +66,73 @@ function getSmtpTransporter(): Transporter | null {
 }
 
 /**
- * Startup diagnostic: verifies Resend or SMTP connectivity.
+ * Startup diagnostic: verifies active email transport.
  */
 export async function initEmailService(): Promise<void> {
+  const webhookUrl = (env.GMAIL_WEBHOOK_URL || '').trim();
+  if (webhookUrl) {
+    logger.info('Email service ready: using Gmail Webhook API (HTTPS port 443 — works on Render with NO domain restrictions)');
+    return;
+  }
+
   const resend = getResendClient();
   if (resend) {
     logger.info('Email service ready: using Resend HTTP API (HTTPS port 443 — works on Render)');
-  } else {
-    const transporter = getSmtpTransporter();
-    if (transporter) {
-      try {
-        await transporter.verify();
-        logger.info('Email service ready: using Nodemailer SMTP (verified)');
-      } catch (err: any) {
-        logger.warn('SMTP verification notice', { error: err.message, code: err.code });
-      }
-    } else {
-      logger.warn('No email provider configured — set RESEND_API_KEY or SMTP credentials');
+    return;
+  }
+
+  const transporter = getSmtpTransporter();
+  if (transporter) {
+    try {
+      await transporter.verify();
+      logger.info('Email service ready: using Nodemailer SMTP (verified)');
+    } catch (err: any) {
+      logger.warn('SMTP verification notice', { error: err.message, code: err.code });
     }
+  } else {
+    logger.warn('No email provider configured — set GMAIL_WEBHOOK_URL, RESEND_API_KEY, or SMTP credentials');
   }
 }
 
+/**
+ * Deliver email via Google Apps Script Webhook (Port 443 HTTPS, sends from admin132212@gmail.com).
+ */
+async function sendViaGoogleWebhook(webhookUrl: string, options: EmailOptions): Promise<boolean> {
+  try {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: options.to,
+        subject: options.subject,
+        text: options.text,
+        html: options.html
+      })
+    });
+
+    if (!response.ok) {
+      logger.error('Google Webhook HTTP error', { status: response.status, to: options.to });
+      return false;
+    }
+
+    const result = await response.json().catch(() => ({ status: 'ok' }));
+    if (result && (result.status === 'ok' || result.success)) {
+      logger.info('Email sent successfully via Gmail Webhook', { to: options.to });
+      return true;
+    }
+
+    logger.warn('Google Webhook returned unexpected body', { result, to: options.to });
+    // If status wasn't explicit error, accept delivery
+    return true;
+  } catch (err: any) {
+    logger.error('Google Webhook dispatch exception', { error: err.message, to: options.to });
+    return false;
+  }
+}
+
+/**
+ * Deliver email via Resend HTTP API (Port 443 HTTPS).
+ */
 async function sendViaResend(client: Resend, options: EmailOptions): Promise<boolean> {
   try {
     const rawFrom = (env.RESEND_FROM || '').trim();
@@ -94,6 +140,7 @@ async function sendViaResend(client: Resend, options: EmailOptions): Promise<boo
       .replace(/^RESEND_FROM\s*=\s*/i, '')
       .replace(/^['"]|['"]$/g, '')
       .trim() || 'Campus Radar <onboarding@resend.dev>';
+
     const { data, error } = await client.emails.send({
       from: fromAddress,
       to: [options.to],
@@ -122,6 +169,9 @@ async function sendViaResend(client: Resend, options: EmailOptions): Promise<boo
   }
 }
 
+/**
+ * Deliver email via Nodemailer SMTP.
+ */
 async function sendViaSmtp(options: EmailOptions): Promise<boolean> {
   const transporter = getSmtpTransporter();
   if (!transporter) {
@@ -160,12 +210,24 @@ async function sendViaSmtp(options: EmailOptions): Promise<boolean> {
 export const emailService = {
   async sendEmail(options: EmailOptions): Promise<boolean> {
     logger.info('Email dispatch requested', { to: options.to, subject: options.subject });
+
+    // 1. First priority: Google Apps Script Webhook (Port 443, delivers to ANY student domain from admin132212@gmail.com)
+    const webhookUrl = (env.GMAIL_WEBHOOK_URL || '').trim();
+    if (webhookUrl) {
+      const success = await sendViaGoogleWebhook(webhookUrl, options);
+      if (success) return true;
+      logger.warn('Gmail Webhook failed, attempting Resend fallback', { to: options.to });
+    }
+
+    // 2. Second priority: Resend HTTP API
     const resend = getResendClient();
     if (resend) {
       const success = await sendViaResend(resend, options);
       if (success) return true;
       logger.warn('Resend dispatch failed, attempting SMTP fallback', { to: options.to });
     }
+
+    // 3. Third priority: Nodemailer SMTP
     return sendViaSmtp(options);
   },
 

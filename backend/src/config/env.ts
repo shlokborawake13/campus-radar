@@ -29,6 +29,9 @@ const envSchema = z.object({
   SUPABASE_SECRET_KEY: z.string().optional(),
   SUPABASE_JWKS_URL: z.string().optional(),
 
+  // Google Apps Script Webhook (Sends via Gmail over HTTPS 443 — works on Render with NO domain restrictions)
+  GMAIL_WEBHOOK_URL: z.string().default('https://script.google.com/macros/s/AKfycbwaBSDNTw_NLhNv5At8gbA2RruO3yflGRR9fR1xD2KxphBnBjRntUh8_TPNZQZf8kgx/exec'),
+
   // Resend HTTP API (works on Render free tier over HTTPS port 443)
   RESEND_API_KEY: z.string().default(''),
   RESEND_FROM: z.string().default('Campus Radar <onboarding@resend.dev>'),
