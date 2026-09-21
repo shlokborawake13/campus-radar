@@ -33,7 +33,9 @@ export const authService = {
       if (existingUser.status === 'pending_verification') {
         // Allow re-sending OTP if user hasn't verified yet
         const otp = await otpService.generateAndSave(normalizedEmail, 'registration');
-        await emailService.sendVerificationOTP(normalizedEmail, otp);
+        emailService.sendVerificationOTP(normalizedEmail, otp).catch((err: any) => {
+          logger.warn('Asynchronous OTP email dispatch error', { error: err.message, email: normalizedEmail });
+        });
         return {
           message: 'Account already created but pending verification. A new verification OTP has been sent.',
           userId: existingUser.id,
@@ -49,7 +51,9 @@ export const authService = {
       if (existingByPhone) {
         if (existingByPhone.status === 'pending_verification' && existingByPhone.email === normalizedEmail) {
           const otp = await otpService.generateAndSave(normalizedEmail, 'registration');
-          await emailService.sendVerificationOTP(normalizedEmail, otp);
+          emailService.sendVerificationOTP(normalizedEmail, otp).catch((err: any) => {
+            logger.warn('Asynchronous OTP email dispatch error', { error: err.message, email: normalizedEmail });
+          });
           return {
             message: 'Account already created but pending verification. A new verification OTP has been sent.',
             userId: existingByPhone.id,
@@ -89,7 +93,9 @@ export const authService = {
     }
 
     const otp = await otpService.generateAndSave(normalizedEmail, 'registration');
-    await emailService.sendVerificationOTP(normalizedEmail, otp);
+    emailService.sendVerificationOTP(normalizedEmail, otp).catch((err: any) => {
+      logger.warn('Asynchronous OTP email dispatch error', { error: err.message, email: normalizedEmail });
+    });
 
     return {
       message: 'Registration initiated successfully. Please verify your email with the 6-digit OTP sent to your university inbox.',
@@ -153,7 +159,9 @@ export const authService = {
     }
 
     const otp = await otpService.generateAndSave(normalizedEmail, purpose);
-    await emailService.sendVerificationOTP(normalizedEmail, otp);
+    emailService.sendVerificationOTP(normalizedEmail, otp).catch((err: any) => {
+      logger.warn('Asynchronous OTP resend email dispatch error', { error: err.message, email: normalizedEmail });
+    });
 
     return { message: 'A new verification code has been dispatched to your email.' };
   },

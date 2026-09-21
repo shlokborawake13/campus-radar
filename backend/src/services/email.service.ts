@@ -22,7 +22,10 @@ function getTransporter(): Transporter | null {
       auth: {
         user: env.SMTP_USER,
         pass: env.SMTP_PASS
-      }
+      },
+      connectionTimeout: 3000,
+      greetingTimeout: 3000,
+      socketTimeout: 3500
     });
     logger.info('Initialized SMTP email transporter', { host: env.SMTP_HOST, port: env.SMTP_PORT });
   }
@@ -42,17 +45,24 @@ export const emailService = {
 
     if (mailTransporter) {
       try {
-        const info = await mailTransporter.sendMail({
+        const sendPromise = mailTransporter.sendMail({
           from: env.SMTP_FROM,
           to: options.to,
           subject: options.subject,
           text: options.text,
           html: options.html
         });
-        logger.info('Email sent successfully via SMTP', { messageId: info.messageId, to: options.to });
+
+        // Hard 3.5s timeout guarantee so email never hangs user requests
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('SMTP dispatch timed out')), 3500)
+        );
+
+        const info = await Promise.race([sendPromise, timeoutPromise]) as any;
+        logger.info('Email sent successfully via SMTP', { messageId: info?.messageId, to: options.to });
         return true;
       } catch (error: any) {
-        logger.warn('SMTP email dispatch failed, proceeding with registration flow', { error: error.message, to: options.to });
+        logger.warn('SMTP email dispatch failed or timed out, proceeding with registration flow', { error: error.message, to: options.to });
         return false;
       }
     } else {
