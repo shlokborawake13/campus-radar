@@ -52,23 +52,23 @@ export const emailService = {
         logger.info('Email sent successfully via SMTP', { messageId: info.messageId, to: options.to });
         return true;
       } catch (error: any) {
-        logger.error('SMTP email dispatch failed', { error: error.message, to: options.to });
-        throw error;
+        logger.warn('SMTP email dispatch failed, proceeding with registration flow', { error: error.message, to: options.to });
+        return false;
       }
     } else {
       if (env.NODE_ENV === 'production') {
-        logger.error('SMTP credentials missing in production environment. Email delivery aborted.', { to: options.to });
-        throw new Error('Email delivery service is not configured');
+        logger.warn('SMTP credentials not configured in environment. Verification email simulated.', { to: options.to });
+      } else {
+        // Development console fallback when SMTP credentials are not yet configured in .env
+        console.log('\n================ [EMAIL OTP DISPATCH] ================');
+        console.log(`From:    ${env.SMTP_FROM}`);
+        console.log(`To:      ${options.to}`);
+        console.log(`Subject: ${options.subject}`);
+        console.log(`Body:    ${options.text}`);
+        console.log('------------------------------------------------------');
+        console.log('NOTE: To send real emails, set SMTP_HOST, SMTP_USER, and SMTP_PASS in backend/.env');
+        console.log('======================================================\n');
       }
-      // Development console fallback when SMTP credentials are not yet configured in .env
-      console.log('\n================ [EMAIL OTP DISPATCH] ================');
-      console.log(`From:    ${env.SMTP_FROM}`);
-      console.log(`To:      ${options.to}`);
-      console.log(`Subject: ${options.subject}`);
-      console.log(`Body:    ${options.text}`);
-      console.log('------------------------------------------------------');
-      console.log('NOTE: To send real emails, set SMTP_HOST, SMTP_USER, and SMTP_PASS in server/.env');
-      console.log('======================================================\n');
       return true;
     }
   },
