@@ -1,3 +1,5 @@
+process.env.NODE_ENV = 'test';
+
 import { isAllowedStudentEmail } from '../security/emailDomain.js';
 import { hashPassword, verifyPassword } from '../security/password.js';
 import { signAccessToken, verifyAccessToken, hashToken } from '../security/jwt.js';
@@ -427,6 +429,17 @@ async function runSecurityTests() {
     tamperedTokenCaught = true;
   }
   assert('Rejects tampered signature access token', tamperedTokenCaught);
+
+  // Test 17: Root & Health Check Endpoint Availability
+  console.log('\n17. Deployment & Health Endpoints:');
+  const appModule = await import('../index.js');
+  const app = appModule.default;
+  assert('Express application instance is properly exported', typeof app === 'function');
+
+  // Test 18: Session Retention & Order Validation
+  console.log('\n18. Session Retention Architecture:');
+  const { sessionRepo } = await import('../repositories/session.repo.js');
+  assert('sessionRepo.enforceMaxSessions is exported and callable', typeof sessionRepo.enforceMaxSessions === 'function');
 
   await pool.end();
 

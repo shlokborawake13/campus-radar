@@ -56,6 +56,10 @@ export const emailService = {
         throw error;
       }
     } else {
+      if (env.NODE_ENV === 'production') {
+        logger.error('SMTP credentials missing in production environment. Email delivery aborted.', { to: options.to });
+        throw new Error('Email delivery service is not configured');
+      }
       // Development console fallback when SMTP credentials are not yet configured in .env
       console.log('\n================ [EMAIL OTP DISPATCH] ================');
       console.log(`From:    ${env.SMTP_FROM}`);

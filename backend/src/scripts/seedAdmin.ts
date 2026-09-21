@@ -4,9 +4,15 @@ import { generateTOTPSecret, generateTOTPQRCode } from '../security/totp.js';
 import { logger } from '../utils/logger.js';
 
 async function seedSuperAdmin() {
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@sanjivani.edu.in';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'SuperAdmin#CampusRadar2026!';
+  const isProduction = process.env.NODE_ENV === 'production';
+  const adminEmail = process.env.ADMIN_EMAIL || (isProduction ? '' : 'admin@sanjivani.edu.in');
+  const adminPassword = process.env.ADMIN_PASSWORD || (isProduction ? '' : 'DevAdmin#2026!Secure');
   const adminName = process.env.ADMIN_NAME || 'Super Administrator';
+
+  if (!adminEmail || !adminPassword) {
+    logger.error('ADMIN_EMAIL and ADMIN_PASSWORD environment variables are required to seed admin');
+    process.exit(1);
+  }
 
   logger.info('Running idempotent super_admin seeding...', { email: adminEmail });
 
@@ -17,7 +23,7 @@ async function seedSuperAdmin() {
 
   if (existingRes.rowCount && existingRes.rowCount > 0) {
     const existing = existingRes.rows[0];
-    logger.info(`Admin account ${adminEmail} already exists. Updating credentials and elevating to super_admin...`);
+    logger.info(`Admin account exists. Updating credentials and elevating to super_admin...`, { email: adminEmail });
 
     await pool.query(
       `UPDATE users 
@@ -33,14 +39,18 @@ async function seedSuperAdmin() {
 
     const qrDataUrl = await generateTOTPQRCode(adminEmail, secretToUse);
 
-    console.log('\n================ SUPER ADMIN READY ================');
-    console.log(`Email:       ${adminEmail}`);
-    console.log(`Role:        super_admin`);
-    console.log(`TOTP Secret: ${secretToUse}`);
-    console.log(`TOTP QR Data URL: ${qrDataUrl.substring(0, 50)}...`);
-    console.log('===================================================\n');
+    if (!isProduction) {
+      console.log('\n================ SUPER ADMIN READY ================');
+      console.log(`Email:       ${adminEmail}`);
+      console.log(`Role:        super_admin`);
+      console.log(`TOTP Secret: ${secretToUse}`);
+      console.log(`TOTP QR Data URL: ${qrDataUrl.substring(0, 50)}...`);
+      console.log('===================================================\n');
+    } else {
+      logger.info('Super admin account credentials successfully updated in database.', { email: adminEmail });
+    }
   } else {
-    logger.info(`Creating initial super_admin account for ${adminEmail}...`);
+    logger.info(`Creating initial super_admin account...`, { email: adminEmail });
 
     await pool.query(
       `INSERT INTO users 
@@ -51,14 +61,18 @@ async function seedSuperAdmin() {
 
     const qrDataUrl = await generateTOTPQRCode(adminEmail, totpSecret);
 
-    console.log('\n================ SUPER ADMIN CREATED ================');
-    console.log(`Email:             ${adminEmail}`);
-    console.log(`Temporary Password: ${adminPassword}`);
-    console.log(`Role:              super_admin`);
-    console.log(`TOTP Secret:       ${totpSecret}`);
-    console.log(`TOTP QR Data URL:  ${qrDataUrl.substring(0, 50)}...`);
-    console.log('Scan the secret into Google Authenticator / Authy to complete MFA setup.');
-    console.log('=====================================================\n');
+    if (!isProduction) {
+      console.log('\n================ SUPER ADMIN CREATED ================');
+      console.log(`Email:             ${adminEmail}`);
+      console.log(`Temporary Password: ${adminPassword}`);
+      console.log(`Role:              super_admin`);
+      console.log(`TOTP Secret:       ${totpSecret}`);
+      console.log(`TOTP QR Data URL:  ${qrDataUrl.substring(0, 50)}...`);
+      console.log('Scan the secret into Google Authenticator / Authy to complete MFA setup.');
+      console.log('=====================================================\n');
+    } else {
+      logger.info('Super admin account successfully provisioned in database.', { email: adminEmail });
+    }
   }
 }
 

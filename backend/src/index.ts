@@ -79,6 +79,19 @@ app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads'), {
   immutable: true
 }));
 
+// Root status endpoint for platform probes and API inspection
+app.get('/', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'campus-radar-backend',
+    version: '1.0.0',
+    health: '/health'
+  });
+});
+app.head('/', (_req, res) => {
+  res.status(200).end();
+});
+
 // Health check endpoint
 app.get('/health', (_req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=60');
@@ -116,28 +129,40 @@ app.use(errorHandler);
 const PORT = Number(process.env.PORT) || env.PORT || 5000;
 const HOST = '0.0.0.0';
 
-const server = app.listen(PORT, HOST, () => {
-  logger.info(`Campus Radar Backend Server listening on http://${HOST}:${PORT}`, {
-    environment: env.NODE_ENV,
-    port: PORT
-    // NOTE: Admin secret path intentionally NOT logged to prevent leakage in log files
+let server: any = null;
+if (process.env.NODE_ENV !== 'test') {
+  server = app.listen(PORT, HOST, () => {
+    logger.info(`Campus Radar Backend Server listening on http://${HOST}:${PORT}`, {
+      environment: env.NODE_ENV,
+      port: PORT
+      // NOTE: Admin secret path intentionally NOT logged to prevent leakage in log files
+    });
   });
-});
+}
 
 // Graceful shutdown handling
 const handleShutdown = async (signal: string) => {
   logger.info(`Received ${signal}. Starting graceful shutdown...`);
-  server.close(async () => {
-    logger.info('HTTP server closed.');
+  if (server) {
+    server.close(async () => {
+      logger.info('HTTP server closed.');
+      try {
+        await pool.end();
+        logger.info('PostgreSQL connection pool closed.');
+        process.exit(0);
+      } catch (err: any) {
+        logger.error('Error closing database pool during shutdown', { error: err.message });
+        process.exit(1);
+      }
+    });
+  } else {
     try {
       await pool.end();
-      logger.info('PostgreSQL connection pool closed.');
       process.exit(0);
-    } catch (err: any) {
-      logger.error('Error closing database pool during shutdown', { error: err.message });
+    } catch {
       process.exit(1);
     }
-  });
+  }
 };
 
 process.on('SIGTERM', () => handleShutdown('SIGTERM'));

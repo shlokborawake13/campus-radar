@@ -75,16 +75,17 @@ export const sessionRepo = {
   async enforceMaxSessions(userId: string, maxSessions: number): Promise<void> {
     // Get all active (non-revoked, non-expired) token families ordered by newest first
     const res = await query<{ token_family: string }>(
-      `SELECT DISTINCT token_family 
+      `SELECT token_family, MAX(created_at) as latest_created 
        FROM refresh_sessions 
        WHERE user_id = $1 AND is_revoked = FALSE AND expires_at > CURRENT_TIMESTAMP 
-       ORDER BY token_family`,
+       GROUP BY token_family
+       ORDER BY latest_created DESC`,
       [userId]
     );
 
     if (res.rowCount && res.rowCount > maxSessions) {
       // Keep the newest maxSessions families, revoke the rest
-      const familiesToKeep = res.rows.slice(-maxSessions).map((r: { token_family: string }) => r.token_family);
+      const familiesToKeep = res.rows.slice(0, maxSessions).map((r: { token_family: string }) => r.token_family);
       await query(
         `UPDATE refresh_sessions 
          SET is_revoked = TRUE, updated_at = CURRENT_TIMESTAMP 
