@@ -47,6 +47,9 @@ export function renderVerifyEmail(container) {
       <p class="body-small" style="text-align: center; margin-top: var(--space-6);">
         Didn't receive the email code? <a style="color: var(--accent-primary); font-weight: var(--weight-medium); cursor: pointer;" id="resend-email">Resend code</a>
       </p>
+      <p class="body-small" style="text-align: center; margin-top: var(--space-2); color: var(--text-tertiary);">
+        💡 Please check both your <strong>Inbox</strong> and <strong>Spam / Junk</strong> folder.
+      </p>
 
       <div class="verify-steps" style="margin-top: var(--space-6);">
         <div class="verify-step verify-step--active">

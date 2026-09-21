@@ -96,9 +96,10 @@ export const authService = {
     }
 
     const otp = await otpService.generateAndSave(normalizedEmail, 'registration');
-    emailService.sendVerificationOTP(normalizedEmail, otp).catch((err: any) => {
-      logger.warn('Asynchronous OTP email dispatch error', { error: err.message, email: normalizedEmail });
-    });
+    const emailSent = await emailService.sendVerificationOTP(normalizedEmail, otp);
+    if (!emailSent) {
+      logger.error('Failed to dispatch registration OTP email', { email: normalizedEmail });
+    }
 
     return {
       message: 'Registration initiated successfully. Please verify your email with the 6-digit OTP sent to your university inbox.',
@@ -167,9 +168,11 @@ export const authService = {
     }
 
     const otp = await otpService.generateAndSave(normalizedEmail, purpose);
-    emailService.sendVerificationOTP(normalizedEmail, otp).catch((err: any) => {
-      logger.warn('Asynchronous OTP resend email dispatch error', { error: err.message, email: normalizedEmail });
-    });
+    const emailSent = await emailService.sendVerificationOTP(normalizedEmail, otp);
+    if (!emailSent) {
+      logger.error('Failed to dispatch resend OTP email', { email: normalizedEmail });
+      throw new BadRequestError('Failed to dispatch verification email. Please check your email and try again.');
+    }
 
     return { message: 'A new verification code has been dispatched to your email.' };
   },
