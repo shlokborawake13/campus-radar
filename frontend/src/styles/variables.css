@@ -1,0 +1,260 @@
+/* ============================================
+   CAMPUS RADAR — DESIGN TOKENS
+   Teachable-inspired warm editorial palette
+   ============================================ */
+
+:root {
+  /* ---- Colors: Backgrounds ---- */
+  --bg-primary: #FAF9F7;
+  --bg-secondary: #F5F3EF;
+  --bg-tertiary: #EDEAE4;
+  --bg-card: #FFFFFF;
+  --bg-card-warm: #FDFCFA;
+  --bg-confession: #F9F5F0;
+  --bg-confession-accent: #FFF8F0;
+  --bg-overlay: rgba(26, 26, 26, 0.5);
+  --bg-modal: #FFFFFF;
+
+  /* ---- Colors: Text ---- */
+  --text-primary: #1A1A1A;
+  --text-secondary: #6B6B6B;
+  --text-tertiary: #999999;
+  --text-inverse: #FFFFFF;
+  --text-link: #2D6A4F;
+
+  /* ---- Colors: Accent ---- */
+  --accent-primary: #2D6A4F;
+  --accent-primary-hover: #245840;
+  --accent-primary-light: #E8F5EE;
+  --accent-primary-subtle: #F0FAF5;
+
+  --accent-peach: #F4A68C;
+  --accent-peach-light: #FFF0EB;
+  --accent-peach-bg: #FDF5F2;
+
+  --accent-lavender: #B8A9D4;
+  --accent-lavender-light: #F3EFFA;
+  --accent-lavender-bg: #F8F5FC;
+
+  --accent-blue: #7EB8D4;
+  --accent-blue-light: #EBF5FA;
+  --accent-blue-bg: #F0F7FC;
+
+  --accent-yellow: #E8C96E;
+  --accent-yellow-light: #FFF8E1;
+  --accent-yellow-bg: #FFFCF0;
+
+  /* ---- Colors: Functional ---- */
+  --color-success: #2D6A4F;
+  --color-success-bg: #E8F5EE;
+  --color-warning: #D4A017;
+  --color-warning-bg: #FFF8E1;
+  --color-error: #C0392B;
+  --color-error-bg: #FDEDEB;
+  --color-info: #5B8DB8;
+  --color-info-bg: #EBF5FA;
+
+  /* ---- Colors: Borders ---- */
+  --border-light: #EDEBE8;
+  --border-medium: #DDD9D3;
+  --border-dark: #C4BFB8;
+  --border-focus: #2D6A4F;
+
+  /* ---- Typography: Fonts ---- */
+  --font-serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* ---- Typography: Sizes ---- */
+  --text-xs: 0.75rem;     /* 12px */
+  --text-sm: 0.8125rem;   /* 13px */
+  --text-base: 0.9375rem; /* 15px */
+  --text-md: 1rem;        /* 16px */
+  --text-lg: 1.125rem;    /* 18px */
+  --text-xl: 1.25rem;     /* 20px */
+  --text-2xl: 1.5rem;     /* 24px */
+  --text-3xl: 1.875rem;   /* 30px */
+  --text-4xl: 2.25rem;    /* 36px */
+  --text-5xl: 3rem;        /* 48px */
+  --text-6xl: 3.75rem;     /* 60px */
+  --text-7xl: 4.5rem;      /* 72px */
+
+  /* ---- Typography: Weights ---- */
+  --weight-light: 300;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ---- Typography: Line Heights ---- */
+  --leading-none: 1;
+  --leading-tight: 1.1;
+  --leading-snug: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* ---- Typography: Letter Spacing ---- */
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-wider: 0.08em;
+  --tracking-widest: 0.14em;
+
+  /* ---- Spacing ---- */
+  --space-1: 0.25rem;   /* 4px */
+  --space-2: 0.5rem;    /* 8px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.25rem;   /* 20px */
+  --space-6: 1.5rem;    /* 24px */
+  --space-8: 2rem;      /* 32px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-12: 3rem;     /* 48px */
+  --space-16: 4rem;     /* 64px */
+  --space-20: 5rem;     /* 80px */
+  --space-24: 6rem;     /* 96px */
+  --space-30: 7.5rem;   /* 120px */
+
+  /* ---- Border Radius ---- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-3xl: 28px;
+  --radius-full: 9999px;
+
+  /* ---- Shadows ---- */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.1);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.08);
+
+  /* ---- Layout ---- */
+  --max-width: 1280px;
+  --max-width-narrow: 720px;
+  --max-width-feed: 640px;
+  --navbar-height: 64px;
+  --bottom-nav-height: 72px;
+  --admin-sidebar-width: 260px;
+
+  /* ---- Transitions ---- */
+  --transition-fast: 150ms ease;
+  --transition-base: 250ms ease;
+  --transition-slow: 400ms ease;
+  --transition-spring: 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ---- Z-Index ---- */
+  --z-base: 1;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-navbar: 300;
+  --z-modal-overlay: 400;
+  --z-modal: 500;
+  --z-toast: 600;
+  --z-tooltip: 700;
+}
+
+/* ---- Dark Mode — Full Override ---- */
+[data-theme="dark"] {
+  /* Backgrounds */
+  --bg-primary: #141414;
+  --bg-secondary: #1C1C1C;
+  --bg-tertiary: #252525;
+  --bg-card: #1E1E1E;
+  --bg-card-warm: #1F1F1D;
+  --bg-confession: #1C1A18;
+  --bg-confession-accent: #221F1A;
+  --bg-overlay: rgba(0, 0, 0, 0.65);
+  --bg-modal: #1E1E1E;
+
+  /* Text */
+  --text-primary: #ECECEA;
+  --text-secondary: #9A9A98;
+  --text-tertiary: #6A6A68;
+  --text-inverse: #141414;
+  --text-link: #5BB88A;
+
+  /* Accent */
+  --accent-primary: #5BB88A;
+  --accent-primary-hover: #4DA87A;
+  --accent-primary-light: rgba(91, 184, 138, 0.12);
+  --accent-primary-subtle: rgba(91, 184, 138, 0.06);
+
+  --accent-peach: #D4896E;
+  --accent-peach-light: rgba(212, 137, 110, 0.12);
+  --accent-peach-bg: rgba(212, 137, 110, 0.08);
+
+  --accent-lavender: #9B8BC0;
+  --accent-lavender-light: rgba(155, 139, 192, 0.12);
+  --accent-lavender-bg: rgba(155, 139, 192, 0.08);
+
+  --accent-blue: #6AA3BF;
+  --accent-blue-light: rgba(106, 163, 191, 0.12);
+  --accent-blue-bg: rgba(106, 163, 191, 0.08);
+
+  --accent-yellow: #C9AA50;
+  --accent-yellow-light: rgba(201, 170, 80, 0.12);
+  --accent-yellow-bg: rgba(201, 170, 80, 0.08);
+
+  /* Functional */
+  --color-success: #5BB88A;
+  --color-success-bg: rgba(91, 184, 138, 0.12);
+  --color-warning: #C9AA50;
+  --color-warning-bg: rgba(201, 170, 80, 0.12);
+  --color-error: #D46B5E;
+  --color-error-bg: rgba(212, 107, 94, 0.12);
+  --color-info: #6AA3BF;
+  --color-info-bg: rgba(106, 163, 191, 0.12);
+
+  /* Borders */
+  --border-light: #2A2A2A;
+  --border-medium: #3A3A3A;
+  --border-dark: #4A4A4A;
+  --border-focus: #5BB88A;
+
+  /* Shadows — softer in dark mode */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* Dark-mode specific overrides that need selectors beyond variables */
+[data-theme="dark"] .navbar {
+  background: rgba(20, 20, 20, 0.92);
+}
+
+[data-theme="dark"] .bottom-nav {
+  background: rgba(20, 20, 20, 0.95);
+}
+
+[data-theme="dark"] .navbar__badge {
+  border-color: var(--bg-primary);
+}
+
+[data-theme="dark"] ::selection {
+  background: rgba(91, 184, 138, 0.25);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #3A3A3A;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #4A4A4A;
+}
+
+[data-theme="dark"] .post-card__action--liked {
+  color: #D46B5E;
+}
+
+[data-theme="dark"] .toast {
+  background: #ECECEA;
+  color: #141414;
+}
