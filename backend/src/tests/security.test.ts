@@ -410,6 +410,24 @@ async function runSecurityTests() {
   // Clean up temporary test user
   await query('DELETE FROM users WHERE id = $1', [unverifiedUserId]);
 
+  // Test 15b: Duplicate Registration Protection (Email & Phone Unique Conflict)
+  console.log('\n15b. Registration Uniqueness & Conflict Protections:');
+  let duplicatePhoneBlocked = false;
+  try {
+    const { authService } = await import('../services/auth.service.js');
+    await authService.register({
+      fullName: 'Another Student',
+      email: 'another.student24@sanjivani.edu.in',
+      phoneNumber: '9373047518',
+      password: 'Password123!'
+    });
+  } catch (err: any) {
+    if (err.statusCode === 409 && err.message.includes('phone number is already registered')) {
+      duplicatePhoneBlocked = true;
+    }
+  }
+  assert('Registration correctly rejects duplicate phone number with 409 Conflict', duplicatePhoneBlocked);
+
   // Test 16: Token Integrity & Signature Verification
   console.log('\n16. Token Integrity & Signature Verification:');
   let invalidTokenCaught = false;

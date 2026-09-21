@@ -41,21 +41,52 @@ export const authService = {
           requiresVerification: true
         };
       }
-      throw new ConflictError('An account with this email address already exists');
+      throw new ConflictError('An account with this email address already exists. Please sign in.');
+    }
+
+    if (data.phoneNumber) {
+      const existingByPhone = await userRepo.findByPhoneNumber(data.phoneNumber);
+      if (existingByPhone) {
+        if (existingByPhone.status === 'pending_verification' && existingByPhone.email === normalizedEmail) {
+          const otp = await otpService.generateAndSave(normalizedEmail, 'registration');
+          await emailService.sendVerificationOTP(normalizedEmail, otp);
+          return {
+            message: 'Account already created but pending verification. A new verification OTP has been sent.',
+            userId: existingByPhone.id,
+            email: normalizedEmail,
+            requiresVerification: true
+          };
+        }
+        throw new ConflictError('An account with this phone number is already registered. Please sign in or use a different phone number.');
+      }
     }
 
     const passwordHash = await hashPassword(data.password);
 
-    const newUser = await userRepo.create({
-      email: normalizedEmail,
-      passwordHash,
-      fullName: data.fullName,
-      department: data.department,
-      graduationYear: data.graduationYear,
-      phoneNumber: data.phoneNumber,
-      role: 'student',
-      status: 'pending_verification'
-    });
+    let newUser;
+    try {
+      newUser = await userRepo.create({
+        email: normalizedEmail,
+        passwordHash,
+        fullName: data.fullName,
+        department: data.department,
+        graduationYear: data.graduationYear,
+        phoneNumber: data.phoneNumber,
+        role: 'student',
+        status: 'pending_verification'
+      });
+    } catch (err: any) {
+      if (err.code === '23505') {
+        const errorDetail = `${err.constraint || ''} ${err.message || ''}`.toLowerCase();
+        if (errorDetail.includes('phone')) {
+          throw new ConflictError('An account with this phone number is already registered. Please sign in or use a different phone number.');
+        }
+        if (errorDetail.includes('email')) {
+          throw new ConflictError('An account with this email address already exists. Please sign in.');
+        }
+      }
+      throw err;
+    }
 
     const otp = await otpService.generateAndSave(normalizedEmail, 'registration');
     await emailService.sendVerificationOTP(normalizedEmail, otp);

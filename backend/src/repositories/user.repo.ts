@@ -37,6 +37,20 @@ export const userRepo = {
     return res.rows[0] || null;
   },
 
+  async findByPhoneNumber(phone: string): Promise<UserRecord | null> {
+    const cleanPhone = phone.trim();
+    const digitsOnly = cleanPhone.replace(/[^0-9]/g, '');
+    const res = await query<UserRecord>(
+      `SELECT * FROM users 
+       WHERE phone_number = $1 
+          OR phone_number = $2 
+          OR phone_number = $3 
+          OR RIGHT(REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g'), 10) = $4`,
+      [cleanPhone, digitsOnly, `+91${digitsOnly.slice(-10)}`, digitsOnly.slice(-10)]
+    );
+    return res.rows[0] || null;
+  },
+
   async create(data: {
     email: string;
     passwordHash: string;
