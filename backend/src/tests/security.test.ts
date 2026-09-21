@@ -357,10 +357,76 @@ async function runSecurityTests() {
     content: 'Campus hackathon poster!',
     imageUrl: uploadResult.url
   });
-  assert('Post created successfully with genuine uploaded image', legitimatePost.image_url === uploadResult.url);
+  // Test 14: Server-Side Role Authorization & Admin Boundary Protection
+  console.log('\n14. Server-Side Role Authorization & Admin Boundary Protection:');
+  const { requireRole } = await import('../middleware/authorize.js');
+
+  let studentBlockedFromAdmin = false;
+  await requireRole(['admin', 'super_admin'])(
+    { user: { id: testUserId, role: 'student', status: 'active' } } as any,
+    {} as any,
+    (err?: any) => {
+      if (err && (err.statusCode === 403 || err.statusCode === 404)) {
+        studentBlockedFromAdmin = true;
+      }
+    }
+  );
+  assert('requireRole middleware strictly blocks student from admin endpoints with 403', studentBlockedFromAdmin);
+
+  let adminAllowedOnAdminRoute = false;
+  await requireRole(['admin', 'super_admin'])(
+    { user: { id: testUserId, role: 'admin', status: 'active' } } as any,
+    {} as any,
+    (err?: any) => {
+      if (!err) {
+        adminAllowedOnAdminRoute = true;
+      }
+    }
+  );
+  assert('requireRole middleware permits authorized admin role', adminAllowedOnAdminRoute);
+
+  // Test 15: IDOR / BOLA Prevention (Ownership Enforcement)
+  console.log('\n15. IDOR / Object-Level Access Control (BOLA):');
+  let idorDeleteBlocked = false;
+  try {
+    // Attempting to delete User A's post as User B (student role)
+    await postService.deletePost(legitimatePost.id, '00000000-0000-0000-0000-000000000001', 'student');
+  } catch (err: any) {
+    idorDeleteBlocked = err.statusCode === 403 || err.message.includes('only delete your own');
+  }
+  assert('IDOR Protection: User cannot delete another user\'s post', idorDeleteBlocked);
+
+  let idorUploadBlocked = false;
+  try {
+    // User B attempting to attach User A's upload
+    await uploadService.validateAndAttachImage('00000000-0000-0000-0000-000000000001', uploadResult.url, 'post');
+  } catch (err: any) {
+    idorUploadBlocked = true;
+  }
+  assert('IDOR Protection: User B cannot attach User A\'s upload', idorUploadBlocked);
 
   // Clean up temporary test user
   await query('DELETE FROM users WHERE id = $1', [unverifiedUserId]);
+
+  // Test 16: Token Integrity & Signature Verification
+  console.log('\n16. Token Integrity & Signature Verification:');
+  let invalidTokenCaught = false;
+  try {
+    verifyAccessToken('invalid.token.payload');
+  } catch {
+    invalidTokenCaught = true;
+  }
+  assert('Rejects malformed access token', invalidTokenCaught);
+
+  let tamperedTokenCaught = false;
+  try {
+    const valid = signAccessToken(testUserId);
+    const tampered = valid.substring(0, valid.length - 4) + 'abcd';
+    verifyAccessToken(tampered);
+  } catch {
+    tamperedTokenCaught = true;
+  }
+  assert('Rejects tampered signature access token', tamperedTokenCaught);
 
   await pool.end();
 

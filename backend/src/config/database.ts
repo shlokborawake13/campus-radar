@@ -41,7 +41,10 @@ export async function query<T extends pg.QueryResultRow = any>(
     });
     return res;
   } catch (err: any) {
-    logger.error('Database query failed', { text, error: err.message });
+    logger.error('Database query failed', {
+      text: env.NODE_ENV !== 'production' ? text : '[REDACTED]',
+      error: err.message
+    });
     throw err;
   }
 }

@@ -160,13 +160,24 @@ export const uploadService = {
 
     if (supabaseStorage) {
       try {
-        // Ensure bucket exists or upload directly
-        const { error: uploadError } = await supabaseStorage.storage
+        let { error: uploadError } = await supabaseStorage.storage
           .from(BUCKET_NAME)
           .upload(storageKey, optimizedBuffer, {
             contentType: 'image/webp',
             upsert: false
           });
+
+        if (uploadError && (uploadError.message?.toLowerCase().includes('bucket') || (uploadError as any).statusCode === 404)) {
+          // Attempt to auto-create public bucket if it does not yet exist
+          await supabaseStorage.storage.createBucket(BUCKET_NAME, { public: true }).catch(() => {});
+          const retry = await supabaseStorage.storage
+            .from(BUCKET_NAME)
+            .upload(storageKey, optimizedBuffer, {
+              contentType: 'image/webp',
+              upsert: false
+            });
+          uploadError = retry.error;
+        }
 
         if (!uploadError) {
           const { data: publicUrlData } = supabaseStorage.storage
@@ -229,13 +240,18 @@ export const uploadService = {
   async validateAndAttachImage(userId: string, imageUrl: string, attachedToType: string, attachedToId?: string): Promise<boolean> {
     if (!imageUrl) return true;
 
-    // Check if the URL matches an upload created by this user
+    // Check if the URL matches an asset in the uploads table
     const res = await query(
-      `SELECT id, owner_id, is_attached FROM uploads WHERE url = $1 AND owner_id = $2`,
-      [imageUrl, userId]
+      `SELECT id, owner_id, is_attached FROM uploads WHERE url = $1`,
+      [imageUrl]
     );
 
     if (res.rowCount && res.rowCount > 0) {
+      const uploadRecord = res.rows[0];
+      if (uploadRecord.owner_id !== userId) {
+        throw new ForbiddenError('You cannot attach an image uploaded by another user');
+      }
+
       await query(
         `UPDATE uploads 
          SET is_attached = TRUE, attached_to_type = $1, attached_to_id = $2 
@@ -245,8 +261,8 @@ export const uploadService = {
       return true;
     }
 
-    // Allow internal storage paths like `/uploads/*.webp` or URLs matching SUPABASE_URL if valid
-    if (imageUrl.startsWith('/uploads/') || (env.SUPABASE_URL && imageUrl.startsWith(env.SUPABASE_URL))) {
+    // Allow default system static paths (e.g., default badges or avatars)
+    if (imageUrl.startsWith('/assets/') || imageUrl.startsWith('/images/')) {
       return true;
     }
 
@@ -254,3 +270,4 @@ export const uploadService = {
     throw new BadRequestError('Invalid or unauthorized image URL reference');
   }
 };
+

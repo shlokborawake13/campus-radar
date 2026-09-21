@@ -113,10 +113,13 @@ app.use((req, _res, next) => {
 app.use(errorHandler);
 
 // Start server
-const server = app.listen(env.PORT, () => {
-  logger.info(`Campus Radar Backend Server listening on port ${env.PORT}`, {
+const PORT = Number(process.env.PORT) || env.PORT || 5000;
+const HOST = '0.0.0.0';
+
+const server = app.listen(PORT, HOST, () => {
+  logger.info(`Campus Radar Backend Server listening on http://${HOST}:${PORT}`, {
     environment: env.NODE_ENV,
-    port: env.PORT
+    port: PORT
     // NOTE: Admin secret path intentionally NOT logged to prevent leakage in log files
   });
 });
