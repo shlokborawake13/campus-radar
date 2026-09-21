@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from 'nodemailer';
+import { Resend } from 'resend';
 import { logger } from '../utils/logger.js';
 import { env } from '../config/env.js';
 
@@ -9,24 +10,27 @@ export interface EmailOptions {
   html?: string;
 }
 
-let smtpTransporter: Transporter | null = null;
+let resendClient: Resend | null = null;
+function getResendClient(): Resend | null {
+  const apiKey = (env.RESEND_API_KEY || '').trim();
+  if (!apiKey) return null;
+  if (!resendClient) {
+    resendClient = new Resend(apiKey);
+  }
+  return resendClient;
+}
 
+let smtpTransporter: Transporter | null = null;
 function getSmtpTransporter(): Transporter | null {
   if (smtpTransporter) return smtpTransporter;
 
   const host = (env.SMTP_HOST || 'smtp.gmail.com').trim();
   const user = (env.SMTP_USER || '').trim();
-  // Strip any spaces from app password (e.g. "jmiz wvcn wqxj sxkn" -> "jmizwvcnwqxjsxkn")
   const pass = (env.SMTP_PASS || '').replace(/\s+/g, '');
   const port = Number(env.SMTP_PORT) || 465;
   const secure = env.SMTP_SECURE !== false && port === 465;
 
   if (!host || !user || !pass) {
-    logger.error('SMTP credentials are incomplete — emails cannot be sent', {
-      hasHost: !!host,
-      hasUser: !!user,
-      hasPass: !!pass
-    });
     return null;
   }
 
@@ -57,32 +61,58 @@ function getSmtpTransporter(): Transporter | null {
 }
 
 /**
- * Startup diagnostic: verifies SMTP connectivity and credentials.
+ * Startup diagnostic: verifies Resend or SMTP connectivity.
  */
 export async function initEmailService(): Promise<void> {
-  const transporter = getSmtpTransporter();
-  if (!transporter) {
-    logger.warn('SMTP configuration: incomplete — check SMTP_HOST, SMTP_USER, SMTP_PASS');
-    return;
-  }
-
-  try {
-    await transporter.verify();
-    logger.info('SMTP service ready: connected and verified successfully', {
-      host: env.SMTP_HOST || 'smtp.gmail.com',
-      user: env.SMTP_USER
-    });
-  } catch (err: any) {
-    logger.error('SMTP service error: verification failed', {
-      error: err.message,
-      code: err.code
-    });
+  const resend = getResendClient();
+  if (resend) {
+    logger.info('Email service ready: using Resend HTTP API (HTTPS port 443 — works on Render)');
+  } else {
+    const transporter = getSmtpTransporter();
+    if (transporter) {
+      try {
+        await transporter.verify();
+        logger.info('Email service ready: using Nodemailer SMTP (verified)');
+      } catch (err: any) {
+        logger.warn('SMTP verification notice', { error: err.message, code: err.code });
+      }
+    } else {
+      logger.warn('No email provider configured — set RESEND_API_KEY or SMTP credentials');
+    }
   }
 }
 
-/**
- * Core email delivery via Nodemailer SMTP.
- */
+async function sendViaResend(client: Resend, options: EmailOptions): Promise<boolean> {
+  try {
+    const fromAddress = (env.RESEND_FROM || '').trim() || 'Campus Radar <onboarding@resend.dev>';
+    const { data, error } = await client.emails.send({
+      from: fromAddress,
+      to: [options.to],
+      subject: options.subject,
+      text: options.text,
+      html: options.html || undefined
+    });
+
+    if (error) {
+      logger.error('Resend API error', {
+        error: error.message,
+        name: error.name,
+        to: options.to
+      });
+      return false;
+    }
+
+    logger.info('Email sent successfully via Resend HTTP API', {
+      messageId: data?.id,
+      to: options.to
+    });
+    return true;
+  } catch (err: any) {
+    logger.error('Resend dispatch exception', { error: err.message, to: options.to });
+    return false;
+  }
+}
+
 async function sendViaSmtp(options: EmailOptions): Promise<boolean> {
   const transporter = getSmtpTransporter();
   if (!transporter) {
@@ -113,7 +143,6 @@ async function sendViaSmtp(options: EmailOptions): Promise<boolean> {
       code: error.code,
       to: options.to
     });
-    // Reset cached transporter so subsequent attempts create a fresh connection
     smtpTransporter = null;
     return false;
   }
@@ -122,6 +151,12 @@ async function sendViaSmtp(options: EmailOptions): Promise<boolean> {
 export const emailService = {
   async sendEmail(options: EmailOptions): Promise<boolean> {
     logger.info('Email dispatch requested', { to: options.to, subject: options.subject });
+    const resend = getResendClient();
+    if (resend) {
+      const success = await sendViaResend(resend, options);
+      if (success) return true;
+      logger.warn('Resend dispatch failed, attempting SMTP fallback', { to: options.to });
+    }
     return sendViaSmtp(options);
   },
 

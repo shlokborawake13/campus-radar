@@ -123,8 +123,31 @@ app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'ok', service: 'campus-radar-backend', timestamp: new Date().toISOString() });
 });
 
-// Email health check — verifies SMTP configuration
+// Email health check — verifies active email transport (Resend HTTP API or SMTP)
 app.get('/health/email', async (_req, res) => {
+  const apiKey = (env.RESEND_API_KEY || '').trim();
+  if (apiKey) {
+    try {
+      const testResponse = await fetch('https://api.resend.com/domains', {
+        headers: { Authorization: `Bearer ${apiKey}` }
+      });
+      if (testResponse.ok) {
+        const domains = await testResponse.json();
+        res.status(200).json({
+          status: 'ok',
+          provider: 'resend',
+          apiKeyValid: true,
+          from: env.RESEND_FROM || 'Campus Radar <onboarding@resend.dev>',
+          domains: domains.data?.map((d: any) => ({ name: d.name, status: d.status })) || [],
+          timestamp: new Date().toISOString()
+        });
+        return;
+      }
+    } catch (err: any) {
+      // Fall through to SMTP check
+    }
+  }
+
   const host = (env.SMTP_HOST || '').trim();
   const user = (env.SMTP_USER || '').trim();
   const hasPass = Boolean((env.SMTP_PASS || '').trim());

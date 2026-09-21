@@ -29,7 +29,11 @@ const envSchema = z.object({
   SUPABASE_SECRET_KEY: z.string().optional(),
   SUPABASE_JWKS_URL: z.string().optional(),
 
-  // SMTP Email Configuration (Nodemailer)
+  // Resend HTTP API (works on Render free tier over HTTPS port 443)
+  RESEND_API_KEY: z.string().default(''),
+  RESEND_FROM: z.string().default('Campus Radar <onboarding@resend.dev>'),
+
+  // SMTP Email Configuration (Nodemailer fallback / local dev)
   SMTP_HOST: z.string().default('smtp.gmail.com'),
   SMTP_PORT: z.union([z.string(), z.number()]).default('465').transform((v) => typeof v === 'string' ? parseInt(v, 10) : v),
   SMTP_SECURE: z.union([z.string(), z.boolean()]).default('true').transform((v) => String(v) === 'true'),
