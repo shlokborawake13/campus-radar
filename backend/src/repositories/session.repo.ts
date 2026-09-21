@@ -84,7 +84,7 @@ export const sessionRepo = {
 
     if (res.rowCount && res.rowCount > maxSessions) {
       // Keep the newest maxSessions families, revoke the rest
-      const familiesToKeep = res.rows.slice(-maxSessions).map(r => r.token_family);
+      const familiesToKeep = res.rows.slice(-maxSessions).map((r: { token_family: string }) => r.token_family);
       await query(
         `UPDATE refresh_sessions 
          SET is_revoked = TRUE, updated_at = CURRENT_TIMESTAMP 

@@ -27,7 +27,7 @@ async function runExplain() {
       ORDER BY p.created_at DESC, p.id DESC
       LIMIT 16;
     `);
-    console.log(q1.rows.map(r => r['QUERY PLAN']).join('\n'));
+    console.log(q1.rows.map((r: any) => r['QUERY PLAN']).join('\n'));
 
     console.log('\n--- 2. EXPLAIN ANALYZE: CONFESSIONS FEED QUERY ---');
     const q2 = await client.query(`
@@ -47,7 +47,7 @@ async function runExplain() {
       ORDER BY c.created_at DESC, c.id DESC
       LIMIT 16;
     `);
-    console.log(q2.rows.map(r => r['QUERY PLAN']).join('\n'));
+    console.log(q2.rows.map((r: any) => r['QUERY PLAN']).join('\n'));
 
     console.log('\n--- 3. EXPLAIN ANALYZE: EVENTS UPCOMING QUERY ---');
     const q3 = await client.query(`
@@ -74,7 +74,7 @@ async function runExplain() {
       ORDER BY e.event_date ASC, e.event_time ASC, e.id ASC
       LIMIT 16;
     `);
-    console.log(q3.rows.map(r => r['QUERY PLAN']).join('\n'));
+    console.log(q3.rows.map((r: any) => r['QUERY PLAN']).join('\n'));
 
   } finally {
     client.release();

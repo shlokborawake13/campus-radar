@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { performance } from 'node:perf_hooks';
 import { logger } from '../utils/logger.js';
 
 export interface TimedRequest extends Request {
@@ -13,7 +14,7 @@ export function requestTiming(req: TimedRequest, res: Response, next: NextFuncti
 
   // Set Server-Timing header before response sent
   const originalSend = res.send;
-  res.send = function(body) {
+  res.send = function(body?: any) {
     const totalDuration = performance.now() - start;
     const serverTimingParts = [`total;dur=${totalDuration.toFixed(1)}`];
     if (req.timings) {
@@ -42,3 +43,4 @@ export function requestTiming(req: TimedRequest, res: Response, next: NextFuncti
 
   next();
 }
+

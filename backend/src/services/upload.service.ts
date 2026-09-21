@@ -5,7 +5,7 @@ import fs from 'fs';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { env } from '../config/env.js';
 import { query } from '../config/database.js';
-import { BadRequestError, PayloadTooLargeError } from '../utils/errors.js';
+import { BadRequestError, ForbiddenError, PayloadTooLargeError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
