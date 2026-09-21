@@ -5,12 +5,8 @@ const allowedOrigins = env.ALLOWED_ORIGINS.split(',').map((o) => o.trim());
 
 export const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    // In production, block requests with no Origin header (e.g., curl, server-to-server)
-    // to prevent CORS bypass. In development, allow them for API testing tools.
+    // Allow requests with no origin (such as mobile apps, curl, server-to-server, or same-origin proxies)
     if (!origin) {
-      if (env.NODE_ENV === 'production') {
-        return callback(null, false);
-      }
       return callback(null, true);
     }
 
@@ -27,6 +23,11 @@ export const corsOptions: cors.CorsOptions = {
 
     // Check configured allowed origins
     if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // Allow official and preview Vercel deployments for Campus Radar
+    if (/^https:\/\/campus-radar[a-z0-9-]*\.vercel\.app$/.test(origin) || origin === 'https://campus-radar.vercel.app') {
       return callback(null, true);
     }
 

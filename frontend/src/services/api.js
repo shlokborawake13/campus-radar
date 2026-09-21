@@ -3,7 +3,11 @@
    Manages tokens, refresh rotation, error handling
    ============================================ */
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const DEFAULT_API_URL = typeof window !== 'undefined' && (window.location.hostname.includes('vercel.app') || window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+  ? 'https://campus-radar-dzc6.onrender.com/api'
+  : '/api';
+
+const API_BASE = (import.meta.env.VITE_API_URL || DEFAULT_API_URL).replace(/\/+$/, '');
 
 
 export const tokenStorage = {
