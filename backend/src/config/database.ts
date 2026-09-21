@@ -9,15 +9,41 @@ if (typeof dns.setDefaultResultOrder === 'function') {
 
 const { Pool } = pg;
 
-// Supabase and hosted PostgreSQL instances often require SSL with rejectUnauthorized: false
+/**
+ * Normalizes PostgreSQL connection string.
+ * Supabase direct endpoints (db.<ref>.supabase.co:5432) have no IPv4 A records and fail on Render with ENETUNREACH.
+ * This helper automatically adapts direct Supabase URLs to the IPv4 Pooler endpoint.
+ */
+function getNormalizedDatabaseUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    url.searchParams.delete('sslmode');
+
+    if (url.hostname.startsWith('db.') && url.hostname.endsWith('.supabase.co')) {
+      const projectRef = url.hostname.split('.')[1];
+      url.hostname = 'aws-0-ap-south-1.pooler.supabase.com';
+      url.port = '5432';
+      if (!url.username.includes('.')) {
+        url.username = `postgres.${projectRef}`;
+      }
+    }
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+const connectionString = getNormalizedDatabaseUrl(env.DATABASE_URL);
+
+// Supabase and hosted PostgreSQL instances require SSL with rejectUnauthorized: false
 const requiresSsl = 
   env.NODE_ENV === 'production' || 
-  env.DATABASE_URL.includes('supabase.co') || 
-  env.DATABASE_URL.includes('sslmode=require') ||
-  env.DATABASE_URL.includes('pooler.supabase.com');
+  connectionString.includes('supabase.co') || 
+  connectionString.includes('pooler.supabase.com') ||
+  env.DATABASE_URL.includes('sslmode=require');
 
 export const pool = new Pool({
-  connectionString: env.DATABASE_URL,
+  connectionString,
   max: env.DB_MAX_CONNECTIONS,
   idleTimeoutMillis: env.DB_IDLE_TIMEOUT_MS,
   connectionTimeoutMillis: env.DB_CONNECTION_TIMEOUT_MS,
