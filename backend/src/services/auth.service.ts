@@ -23,6 +23,7 @@ export const authService = {
     phoneNumber?: string;
   }) {
     const normalizedEmail = data.email.toLowerCase().trim();
+    logger.info('Signup registration requested', { email: normalizedEmail, department: data.department });
 
     if (!isAllowedStudentEmail(normalizedEmail)) {
       throw new BadRequestError('Only official @sanjivani.edu.in email addresses are permitted');
@@ -31,13 +32,13 @@ export const authService = {
     const existingUser = await userRepo.findByEmail(normalizedEmail);
     if (existingUser) {
       if (existingUser.status === 'pending_verification') {
-        // Allow re-sending OTP if user hasn't verified yet
+        logger.info('Signup for pending verification account, regenerating OTP', { email: normalizedEmail, userId: existingUser.id });
         const otp = await otpService.generateAndSave(normalizedEmail, 'registration');
         emailService.sendVerificationOTP(normalizedEmail, otp).catch((err: any) => {
           logger.warn('Asynchronous OTP email dispatch error', { error: err.message, email: normalizedEmail });
         });
         return {
-          message: 'Account already created but pending verification. A new verification OTP has been sent.',
+          message: 'Account pending verification. A new verification OTP has been sent to your email.',
           userId: existingUser.id,
           email: normalizedEmail,
           requiresVerification: true
@@ -50,12 +51,13 @@ export const authService = {
       const existingByPhone = await userRepo.findByPhoneNumber(data.phoneNumber);
       if (existingByPhone) {
         if (existingByPhone.status === 'pending_verification' && existingByPhone.email === normalizedEmail) {
+          logger.info('Signup by existing pending phone number, regenerating OTP', { email: normalizedEmail, userId: existingByPhone.id });
           const otp = await otpService.generateAndSave(normalizedEmail, 'registration');
           emailService.sendVerificationOTP(normalizedEmail, otp).catch((err: any) => {
             logger.warn('Asynchronous OTP email dispatch error', { error: err.message, email: normalizedEmail });
           });
           return {
-            message: 'Account already created but pending verification. A new verification OTP has been sent.',
+            message: 'Account pending verification. A new verification OTP has been sent to your email.',
             userId: existingByPhone.id,
             email: normalizedEmail,
             requiresVerification: true
@@ -79,6 +81,7 @@ export const authService = {
         role: 'student',
         status: 'pending_verification'
       });
+      logger.info('Student user created in database as pending_verification', { userId: newUser.id, email: normalizedEmail });
     } catch (err: any) {
       if (err.code === '23505') {
         const errorDetail = `${err.constraint || ''} ${err.message || ''}`.toLowerCase();
@@ -107,6 +110,8 @@ export const authService = {
 
   async verifyEmailOtp(email: string, otp: string, userAgent?: string, ipAddress?: string) {
     const normalizedEmail = email.toLowerCase().trim();
+    logger.info('Verifying email OTP', { email: normalizedEmail });
+
     const user = await userRepo.findByEmail(normalizedEmail);
     if (!user) {
       throw new BadRequestError('User not found');
@@ -114,6 +119,7 @@ export const authService = {
 
     await otpService.verify(normalizedEmail, 'registration', otp);
     const updatedUser = await userRepo.markEmailVerified(user.id);
+    logger.info('User marked email_verified and status set to active', { userId: updatedUser.id, email: normalizedEmail });
 
     // Create session and return tokens
     const tokenFamily = crypto.randomUUID();
@@ -153,6 +159,8 @@ export const authService = {
 
   async resendOtp(email: string, purpose: string = 'registration') {
     const normalizedEmail = email.toLowerCase().trim();
+    logger.info('Resending OTP requested', { email: normalizedEmail, purpose });
+
     const user = await userRepo.findByEmail(normalizedEmail);
     if (!user) {
       throw new BadRequestError('Account does not exist');

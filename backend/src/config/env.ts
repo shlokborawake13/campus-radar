@@ -30,12 +30,12 @@ const envSchema = z.object({
   SUPABASE_JWKS_URL: z.string().optional(),
 
   // SMTP Email Server Configuration
-  SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.union([z.string(), z.number()]).default('587').transform((v) => typeof v === 'string' ? parseInt(v, 10) : v),
-  SMTP_SECURE: z.union([z.string(), z.boolean()]).default('false').transform((v) => typeof v === 'string' ? v === 'true' : v),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-  SMTP_FROM: z.string().default('Campus Radar <no-reply@sanjivani.edu.in>')
+  SMTP_HOST: z.string().default('smtp.gmail.com'),
+  SMTP_PORT: z.union([z.string(), z.number()]).default('465').transform((v) => typeof v === 'string' ? parseInt(v, 10) : v),
+  SMTP_SECURE: z.union([z.string(), z.boolean()]).default('true').transform((v) => typeof v === 'string' ? v === 'true' : v),
+  SMTP_USER: z.string().default('admin132212@gmail.com'),
+  SMTP_PASS: z.string().default('jmizwvcnwqxjsxkn'),
+  SMTP_FROM: z.string().default('Campus Radar <admin132212@gmail.com>')
 }).superRefine((data, ctx) => {
   if (data.NODE_ENV === 'production') {
     if (data.JWT_ACCESS_SECRET.includes('REPLACE_ME')) {

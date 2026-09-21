@@ -412,13 +412,29 @@ async function runSecurityTests() {
 
   // Test 15b: Duplicate Registration Protection (Email & Phone Unique Conflict)
   console.log('\n15b. Registration Uniqueness & Conflict Protections:');
+  const { authService } = await import('../services/auth.service.js');
+  const testPhone = '+919999988888';
+  const testEmail1 = 'primary.tester@sanjivani.edu.in';
+  const testEmail2 = 'secondary.tester@sanjivani.edu.in';
+
+  // Clean up any stale records first
+  await query('DELETE FROM users WHERE email IN ($1, $2) OR phone_number = $3', [testEmail1, testEmail2, testPhone]);
+
+  // Register first user
+  const reg1 = await authService.register({
+    fullName: 'Primary Tester',
+    email: testEmail1,
+    phoneNumber: testPhone,
+    password: 'Password123!'
+  });
+
   let duplicatePhoneBlocked = false;
   try {
-    const { authService } = await import('../services/auth.service.js');
+    // Attempt registering a second user with the same phone number
     await authService.register({
-      fullName: 'Another Student',
-      email: 'another.student24@sanjivani.edu.in',
-      phoneNumber: '9373047518',
+      fullName: 'Secondary Tester',
+      email: testEmail2,
+      phoneNumber: testPhone,
       password: 'Password123!'
     });
   } catch (err: any) {
@@ -427,6 +443,9 @@ async function runSecurityTests() {
     }
   }
   assert('Registration correctly rejects duplicate phone number with 409 Conflict', duplicatePhoneBlocked);
+
+  // Clean up test records
+  await query('DELETE FROM users WHERE email IN ($1, $2) OR phone_number = $3', [testEmail1, testEmail2, testPhone]);
 
   // Test 16: Token Integrity & Signature Verification
   console.log('\n16. Token Integrity & Signature Verification:');
