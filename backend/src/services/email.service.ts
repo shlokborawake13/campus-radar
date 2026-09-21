@@ -11,23 +11,64 @@ export interface EmailOptions {
 
 let transporter: Transporter | null = null;
 
+function getCleanSmtpConfig() {
+  const rawHost = (env.SMTP_HOST || '').trim();
+  const rawUser = (env.SMTP_USER || '').trim();
+  const rawPass = (env.SMTP_PASS || '').trim().replace(/\s+/g, '');
+  const port = Number(env.SMTP_PORT) || 587;
+  const isSecure = env.SMTP_SECURE === true || port === 465;
+
+  return {
+    host: rawHost,
+    user: rawUser,
+    pass: rawPass,
+    port,
+    secure: isSecure,
+    isValid: Boolean(rawHost && rawUser && rawPass)
+  };
+}
+
 function getTransporter(): Transporter | null {
   if (transporter) return transporter;
 
-  if (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS) {
-    transporter = nodemailer.createTransport({
-      host: env.SMTP_HOST,
-      port: env.SMTP_PORT,
-      secure: env.SMTP_SECURE, // true for 465, false for other ports (587, 25)
-      auth: {
-        user: env.SMTP_USER,
-        pass: env.SMTP_PASS
-      },
-      connectionTimeout: 3000,
-      greetingTimeout: 3000,
-      socketTimeout: 3500
+  const config = getCleanSmtpConfig();
+  if (config.isValid) {
+    const isGmail = config.host.includes('gmail.com') || config.user.includes('@gmail.com');
+
+    if (isGmail) {
+      transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: config.user,
+          pass: config.pass
+        },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000
+      });
+    } else {
+      transporter = nodemailer.createTransport({
+        host: config.host,
+        port: config.port,
+        secure: config.secure,
+        auth: {
+          user: config.user,
+          pass: config.pass
+        },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+    }
+
+    logger.info('Initialized SMTP email transporter', {
+      host: config.host,
+      port: config.port,
+      isGmail
     });
-    logger.info('Initialized SMTP email transporter', { host: env.SMTP_HOST, port: env.SMTP_PORT });
   }
 
   return transporter;
@@ -36,6 +77,7 @@ function getTransporter(): Transporter | null {
 export const emailService = {
   async sendEmail(options: EmailOptions): Promise<boolean> {
     const mailTransporter = getTransporter();
+    const config = getCleanSmtpConfig();
 
     logger.info('Email dispatch triggered', {
       to: options.to,
@@ -43,26 +85,26 @@ export const emailService = {
       hasSmtp: !!mailTransporter
     });
 
-    if (mailTransporter) {
+    if (mailTransporter && config.isValid) {
       try {
-        const sendPromise = mailTransporter.sendMail({
-          from: env.SMTP_FROM,
+        // For Gmail SMTP, sender address must match the authenticated account
+        const isGmail = config.host.includes('gmail.com') || config.user.includes('@gmail.com');
+        const fromAddress = isGmail
+          ? `"Campus Radar" <${config.user}>`
+          : (env.SMTP_FROM || `"Campus Radar" <${config.user}>`);
+
+        const info = await mailTransporter.sendMail({
+          from: fromAddress,
           to: options.to,
           subject: options.subject,
           text: options.text,
           html: options.html
         });
 
-        // Hard 3.5s timeout guarantee so email never hangs user requests
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('SMTP dispatch timed out')), 3500)
-        );
-
-        const info = await Promise.race([sendPromise, timeoutPromise]) as any;
         logger.info('Email sent successfully via SMTP', { messageId: info?.messageId, to: options.to });
         return true;
       } catch (error: any) {
-        logger.warn('SMTP email dispatch failed or timed out, proceeding with registration flow', { error: error.message, to: options.to });
+        logger.error('SMTP email dispatch failed', { error: error.message, to: options.to });
         return false;
       }
     } else {
@@ -108,3 +150,4 @@ export const emailService = {
     return this.sendEmail({ to: email, subject, text, html });
   }
 };
+
