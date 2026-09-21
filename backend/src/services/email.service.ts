@@ -12,7 +12,12 @@ export interface EmailOptions {
 
 let resendClient: Resend | null = null;
 function getResendClient(): Resend | null {
-  const apiKey = (env.RESEND_API_KEY || '').trim();
+  const rawKey = (env.RESEND_API_KEY || '').trim();
+  const apiKey = rawKey
+    .replace(/^RESEND_API_KEY\s*=\s*/i, '')
+    .replace(/^['"]|['"]$/g, '')
+    .trim();
+
   if (!apiKey) return null;
   if (!resendClient) {
     resendClient = new Resend(apiKey);
@@ -84,7 +89,11 @@ export async function initEmailService(): Promise<void> {
 
 async function sendViaResend(client: Resend, options: EmailOptions): Promise<boolean> {
   try {
-    const fromAddress = (env.RESEND_FROM || '').trim() || 'Campus Radar <onboarding@resend.dev>';
+    const rawFrom = (env.RESEND_FROM || '').trim();
+    const fromAddress = rawFrom
+      .replace(/^RESEND_FROM\s*=\s*/i, '')
+      .replace(/^['"]|['"]$/g, '')
+      .trim() || 'Campus Radar <onboarding@resend.dev>';
     const { data, error } = await client.emails.send({
       from: fromAddress,
       to: [options.to],
